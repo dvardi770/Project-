@@ -74,6 +74,56 @@ enum GradingLab {
   NONE
 }
 
+// Grading enums are declared best -> worst. Postgres orders enum values by
+// declaration, so range filters work natively: color BETWEEN 'D' AND 'H'.
+
+enum DiamondColor {
+  D
+  E
+  F
+  G
+  H
+  I
+  J
+  K
+  L
+  M
+  N_TO_Z
+}
+
+enum DiamondClarity {
+  FL
+  IF
+  VVS1
+  VVS2
+  VS1
+  VS2
+  SI1
+  SI2
+  SI3
+  I1
+  I2
+  I3
+}
+
+/// Used for cut, polish and symmetry.
+enum CutGrade {
+  IDEAL
+  EXCELLENT
+  VERY_GOOD
+  GOOD
+  FAIR
+  POOR
+}
+
+enum Fluorescence {
+  NONE
+  FAINT
+  MEDIUM
+  STRONG
+  VERY_STRONG
+}
+
 enum Availability {
   AVAILABLE
   ON_HOLD
@@ -398,12 +448,12 @@ model DiamondCache {
   origin       StoneOrigin
   shape        DiamondShape
   carat        Decimal      @db.Decimal(6, 3)
-  color        String? // D–Z; NULL for fancy colour
-  clarity      String? // FL, IF, VVS1 …
-  cut          String?
-  polish       String?
-  symmetry     String?
-  fluorescence String?
+  color        DiamondColor? // NULL for fancy colour
+  clarity      DiamondClarity?
+  cut          CutGrade?
+  polish       CutGrade?
+  symmetry     CutGrade?
+  fluorescence Fluorescence?
 
   // Fancy colour
   fancyColor     String?
@@ -470,12 +520,12 @@ model CustomMerchantStock {
   origin            StoneOrigin?
   shape             DiamondShape?
   carat             Decimal?      @db.Decimal(6, 3)
-  color             String?
-  clarity           String?
-  cut               String?
-  polish            String?
-  symmetry          String?
-  fluorescence      String?
+  color             DiamondColor?
+  clarity           DiamondClarity?
+  cut               CutGrade?
+  polish            CutGrade?
+  symmetry          CutGrade?
+  fluorescence      Fluorescence?
   lab               GradingLab?
   certificateNumber String?
   certificateUrl    String?

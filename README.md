@@ -41,10 +41,14 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   │   └── migrations/
 │   │   └── src/
 │   ├── feeds/                  # feed adapters + normaliser
-│   │   └── src/{nivoda,rapnet,normalizer}/
+│   │   └── src/
+│   │       ├── nivoda/nivodaIngestor.ts     # GraphQL auth, pagination, upsert into DiamondCache
+│   │       ├── rapnet/rapnetAdapter.ts      # RapNet JSON / CSV -> NormalizedDiamond
+│   │       └── normalizer/                  # shared grading vocabulary + DiamondCache writer
 │   ├── platforms/              # storefront connectors
 │   │   └── src/{shopify,woocommerce,wix}/
-│   ├── pricing/                # markup engine (pure functions over MarkupRule)
+│   ├── pricing/                # markup engine
+│   │   └── src/pricingEngine.ts
 │   ├── shared/                 # cross-app types, validation schemas, constants
 │   │   └── src/{types,schemas,constants}/
 │   └── config/                 # shared tsconfig / lint presets
@@ -54,4 +58,12 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 ├── docs/
 │   └── adr/                    # architecture decision records
 └── .github/workflows/
+```
+
+## Development
+
+```
+pnpm install        # also generates the Prisma client
+pnpm typecheck
+pnpm test
 ```

@@ -1,0 +1,16 @@
+{
+  "name": "@jewelry/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "postinstall": "prisma generate",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": { "@prisma/client": "~6.19.0" },
+  "devDependencies": { "prisma": "~6.19.0" }
+}

@@ -1,0 +1,611 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Jewelry SaaS — core data model (PostgreSQL)
+//
+// Conventions
+//   • Every tenant-owned row carries tenantId; indexes lead with it.
+//   • Money is Decimal(12,2) with an ISO-4217 currency; carat is Decimal(6,3).
+//   • Secrets are never stored in clear text: API keys are hashed, upstream
+//     credentials are envelope-encrypted by the application before insert.
+//   • Range columns are half-open: [min, max). A NULL bound means unbounded.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum PlatformType {
+  SHOPIFY
+  WOOCOMMERCE
+  WIX
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELED
+}
+
+enum ApiKeyType {
+  PUBLISHABLE // embedded in the storefront widget, read-only
+  SECRET // server-to-server
+}
+
+enum FeedSource {
+  NIVODA
+  RAPNET
+}
+
+enum StoneOrigin {
+  NATURAL
+  LAB_GROWN
+}
+
+enum DiamondShape {
+  ROUND
+  PRINCESS
+  CUSHION
+  OVAL
+  EMERALD
+  PEAR
+  MARQUISE
+  RADIANT
+  ASSCHER
+  HEART
+  OTHER
+}
+
+enum GradingLab {
+  GIA
+  IGI
+  HRD
+  GCAL
+  AGS
+  OTHER
+  NONE
+}
+
+enum Availability {
+  AVAILABLE
+  ON_HOLD
+  SOLD
+  UNAVAILABLE
+}
+
+enum MarkupTarget {
+  FEED_DIAMOND
+  MERCHANT_STONE
+  SETTING
+}
+
+enum PriceRounding {
+  NONE
+  NEAREST_1
+  NEAREST_10
+  NEAREST_100
+  ENDING_99
+}
+
+enum MountingStyle {
+  SOLITAIRE
+  HALO
+  HIDDEN_HALO
+  PAVE
+  THREE_STONE
+  SIDE_STONE
+  BEZEL
+  CHANNEL
+  VINTAGE
+  TENSION
+  CATHEDRAL
+  OTHER
+}
+
+enum MetalType {
+  WHITE_GOLD_14K
+  YELLOW_GOLD_14K
+  ROSE_GOLD_14K
+  WHITE_GOLD_18K
+  YELLOW_GOLD_18K
+  ROSE_GOLD_18K
+  PLATINUM_950
+  PALLADIUM_950
+  STERLING_SILVER
+}
+
+enum MerchantStockType {
+  STONE
+  SETTING
+}
+
+enum CastingOrderStatus {
+  PENDING // created, awaiting payment/confirmation from the storefront
+  CONFIRMED
+  IN_PRODUCTION
+  ON_HOLD
+  QC_FAILED
+  READY_TO_SHIP
+  SHIPPED
+  DELIVERED
+  CANCELED
+}
+
+enum CastingStage {
+  CAD_PREP
+  WAX_PRINT
+  CASTING
+  CLEANUP
+  STONE_PROCUREMENT
+  STONE_SETTING
+  POLISHING
+  PLATING
+  ENGRAVING
+  QUALITY_CONTROL
+  PACKAGING
+}
+
+enum RouteStepStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+
+// ─── Tenancy ─────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id   String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name String
+  slug String @unique
+
+  // Storefront integration
+  platformType             PlatformType
+  platformStoreId          String? // shop.myshopify.com, Wix instance id, Woo site URL
+  platformCredentialsEnc   Bytes? // encrypted OAuth token / consumer key+secret
+  platformWebhookSecretEnc Bytes?
+  defaultCurrency          String       @default("USD") @db.Char(3)
+
+  // Billing
+  subscriptionStatus    SubscriptionStatus @default(TRIALING)
+  planCode              String             @default("starter")
+  billingCustomerId     String?            @unique
+  billingSubscriptionId String?            @unique
+  trialEndsAt           DateTime?          @db.Timestamptz(3)
+  currentPeriodEndsAt   DateTime?          @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  domains         TenantDomain[]
+  apiKeys         ApiKey[]
+  feedConnections FeedConnection[]
+  markupRules     MarkupRule[]
+  virtualSettings VirtualSetting[]
+  merchantStock   CustomMerchantStock[]
+  castingOrders   CastingOrder[]
+
+  @@unique([platformType, platformStoreId])
+  @@index([subscriptionStatus])
+  @@map("tenants")
+}
+
+/// Storefront origins allowed to load the widget (CORS / embed allow-list).
+model TenantDomain {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @db.Uuid
+  hostname   String    @unique // lower-cased, no scheme or port
+  isPrimary  Boolean   @default(false)
+  verifiedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tenant_domains")
+}
+
+/// Keys issued to a tenant. Only a SHA-256 hash is persisted.
+model ApiKey {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String     @db.Uuid
+  type       ApiKeyType
+  label      String?
+  prefix     String // first chars, shown in the dashboard for identification
+  keyHash    String     @unique
+  scopes     String[]   @default([])
+  lastUsedAt DateTime?  @db.Timestamptz(3)
+  expiresAt  DateTime?  @db.Timestamptz(3)
+  revokedAt  DateTime?  @db.Timestamptz(3)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, type])
+  @@map("api_keys")
+}
+
+/// A tenant's own Nivoda / RapNet account, which entitles them to the feed.
+model FeedConnection {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String     @db.Uuid
+  source         FeedSource
+  credentialsEnc Bytes
+  isEnabled      Boolean    @default(true)
+  lastVerifiedAt DateTime?  @db.Timestamptz(3)
+  lastError      String?
+  createdAt      DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, source])
+  @@map("feed_connections")
+}
+
+// ─── Pricing ─────────────────────────────────────────────────────────────────
+
+/// One cell of a tenant's markup matrix.
+/// retail = round(cost * (1 + markupPercent / 100) + fixedAddition)
+/// NULL filter columns match anything; the highest-priority match wins.
+model MarkupRule {
+  id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId String  @db.Uuid
+  name     String
+  isActive Boolean @default(true)
+  priority Int     @default(0)
+
+  // Match criteria
+  target     MarkupTarget @default(FEED_DIAMOND)
+  feedSource FeedSource?
+  origin     StoneOrigin?
+  caratMin   Decimal?     @db.Decimal(6, 3)
+  caratMax   Decimal?     @db.Decimal(6, 3)
+  costMin    Decimal?     @db.Decimal(12, 2)
+  costMax    Decimal?     @db.Decimal(12, 2)
+
+  // Adjustment
+  markupPercent Decimal       @default(0) @db.Decimal(7, 4) // 35.0000 = +35 %
+  fixedAddition Decimal       @default(0) @db.Decimal(12, 2)
+  currency      String        @default("USD") @db.Char(3)
+  rounding      PriceRounding @default(NONE)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  castingOrders CastingOrder[]
+
+  @@index([tenantId, isActive, target, priority(sort: Desc)])
+  @@index([tenantId, origin, caratMin, caratMax])
+  @@map("markup_rules")
+}
+
+// ─── Ring-builder catalogue ──────────────────────────────────────────────────
+
+/// A mounting design. tenantId NULL = shared platform catalogue.
+model VirtualSetting {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String?       @db.Uuid
+  sku         String
+  name        String
+  description String?
+  style       MountingStyle
+  isActive    Boolean       @default(true)
+
+  // Centre-stone compatibility
+  compatibleShapes DiamondShape[]
+  centerCaratMin   Decimal        @db.Decimal(6, 3)
+  centerCaratMax   Decimal        @db.Decimal(6, 3)
+
+  // Manufacturing
+  cadId        String // identifier in the CAD library / casting house
+  cadFileUrl   String?
+  bandWidthMm  Decimal? @db.Decimal(5, 2)
+  minRingSize  Decimal? @db.Decimal(4, 2)
+  maxRingSize  Decimal? @db.Decimal(4, 2)
+  leadTimeDays Int?
+
+  // Default media (variants may override per metal)
+  video360Url  String?
+  thumbnailUrl String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  tenant     Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  variants   VirtualSettingVariant[]
+  sideStones SettingSideStone[]
+
+  // NULLs are distinct in Postgres, so platform-catalogue SKU uniqueness
+  // (tenantId IS NULL) is enforced by a partial unique index in a migration.
+  @@unique([tenantId, sku])
+  @@index([tenantId, isActive, style])
+  @@index([compatibleShapes], type: Gin)
+  @@index([cadId])
+  @@map("virtual_settings")
+}
+
+/// A setting in a specific metal — the purchasable / castable unit.
+model VirtualSettingVariant {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  settingId        String    @db.Uuid
+  metal            MetalType
+  castingCost      Decimal   @db.Decimal(12, 2) // wholesale cost of the cast mounting
+  currency         String    @default("USD") @db.Char(3)
+  metalWeightGrams Decimal?  @db.Decimal(7, 3)
+  video360Url      String?
+  imageUrls        String[]  @default([])
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+
+  setting       VirtualSetting        @relation(fields: [settingId], references: [id], onDelete: Cascade)
+  merchantStock CustomMerchantStock[]
+  castingOrders CastingOrder[]
+
+  @@unique([settingId, metal])
+  @@map("virtual_setting_variants")
+}
+
+/// One group of accent stones on a setting (e.g. "24 × 1.3 mm round pavé").
+model SettingSideStone {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  settingId    String       @db.Uuid
+  position     String? // halo, shoulders, gallery …
+  shape        DiamondShape
+  origin       StoneOrigin  @default(NATURAL)
+  quantity     Int
+  totalCarat   Decimal      @db.Decimal(6, 3)
+  sizeMm       Decimal?     @db.Decimal(5, 2)
+  colorGrade   String? // quality range, e.g. "G-H"
+  clarityGrade String? // e.g. "VS1-VS2"
+
+  setting VirtualSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+
+  @@index([settingId])
+  @@map("setting_side_stones")
+}
+
+// ─── Inventory ───────────────────────────────────────────────────────────────
+
+/// Normalised wholesale diamonds from Nivoda / RapNet. Shared across tenants;
+/// visibility is gated by the tenant's FeedConnection for the same source.
+/// Rows are upserted per sync run and flipped to UNAVAILABLE (not deleted)
+/// when they drop out of the feed, so order history keeps its reference.
+model DiamondCache {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source        FeedSource
+  sourceStockId String // supplier-side id, stable across syncs
+  supplierName  String?
+
+  // Certificate
+  lab               GradingLab @default(NONE)
+  certificateNumber String?
+  certificateUrl    String?
+
+  // The 4 Cs and grading
+  origin       StoneOrigin
+  shape        DiamondShape
+  carat        Decimal      @db.Decimal(6, 3)
+  color        String? // D–Z; NULL for fancy colour
+  clarity      String? // FL, IF, VVS1 …
+  cut          String?
+  polish       String?
+  symmetry     String?
+  fluorescence String?
+
+  // Fancy colour
+  fancyColor     String?
+  fancyIntensity String?
+  fancyOvertone  String?
+
+  // Proportions
+  lengthMm     Decimal? @db.Decimal(5, 2)
+  widthMm      Decimal? @db.Decimal(5, 2)
+  depthMm      Decimal? @db.Decimal(5, 2)
+  lwRatio      Decimal? @db.Decimal(4, 2)
+  depthPercent Decimal? @db.Decimal(5, 2)
+  tablePercent Decimal? @db.Decimal(5, 2)
+  girdle       String?
+  culet        String?
+
+  // Wholesale pricing
+  wholesalePrice Decimal  @db.Decimal(12, 2)
+  pricePerCarat  Decimal  @db.Decimal(12, 2)
+  currency       String   @default("USD") @db.Char(3)
+  rapDiscountPct Decimal? @db.Decimal(6, 2)
+
+  // Media and logistics
+  imageUrl        String?
+  videoUrl        String?
+  locationCountry String?      @db.Char(2)
+  deliveryDays    Int?
+  availability    Availability @default(AVAILABLE)
+
+  // Sync bookkeeping
+  raw          Json? // untouched upstream payload, for re-normalisation
+  syncRunId    String?  @db.Uuid
+  firstSeenAt  DateTime @default(now()) @db.Timestamptz(3)
+  lastSyncedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  castingOrders CastingOrder[]
+
+  @@unique([source, sourceStockId])
+  @@index([availability, origin, shape, carat])
+  @@index([availability, origin, shape, wholesalePrice])
+  @@index([certificateNumber])
+  @@index([source, lastSyncedAt])
+  @@map("diamond_cache")
+}
+
+/// Stones and finished settings a jeweler holds locally and uploads
+/// (CSV / dashboard). Stone columns apply when stockType = STONE;
+/// settingVariantId applies when stockType = SETTING.
+model CustomMerchantStock {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String            @db.Uuid
+  stockType    MerchantStockType
+  sku          String
+  title        String?
+  quantity     Int               @default(1)
+  availability Availability      @default(AVAILABLE)
+
+  // Pricing: an explicit retailPrice bypasses the tenant's markup rules.
+  costPrice   Decimal? @db.Decimal(12, 2)
+  retailPrice Decimal? @db.Decimal(12, 2)
+  currency    String   @default("USD") @db.Char(3)
+
+  // Stone attributes (same vocabulary as DiamondCache)
+  origin            StoneOrigin?
+  shape             DiamondShape?
+  carat             Decimal?      @db.Decimal(6, 3)
+  color             String?
+  clarity           String?
+  cut               String?
+  polish            String?
+  symmetry          String?
+  fluorescence      String?
+  lab               GradingLab?
+  certificateNumber String?
+  certificateUrl    String?
+  lengthMm          Decimal?      @db.Decimal(5, 2)
+  widthMm           Decimal?      @db.Decimal(5, 2)
+  depthMm           Decimal?      @db.Decimal(5, 2)
+
+  // Setting attributes
+  settingVariantId String?  @db.Uuid
+  ringSize         Decimal? @db.Decimal(4, 2)
+
+  imageUrls     String[] @default([])
+  videoUrl      String?
+  uploadBatchId String?  @db.Uuid
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  settingVariant VirtualSettingVariant? @relation(fields: [settingVariantId], references: [id], onDelete: SetNull)
+  castingOrders  CastingOrder[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, stockType, availability])
+  @@index([tenantId, origin, shape, carat])
+  @@index([settingVariantId])
+  @@map("custom_merchant_stock")
+}
+
+// ─── Fulfilment ──────────────────────────────────────────────────────────────
+
+/// Casting house / bench that job bags are routed to.
+model CastingVendor {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String   @unique
+  contactEmail String?
+  dispatchUrl  String? // vendor API / webhook endpoint for job tickets
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  orders     CastingOrder[]
+  routeSteps CastingRouteStep[]
+
+  @@map("casting_vendors")
+}
+
+/// One ring to be physically made — a job bag. Everything needed to build and
+/// price it is snapshotted, because catalogue and feed rows change afterwards.
+model CastingOrder {
+  id           String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String             @db.Uuid
+  jobBagNumber String             @unique // human-readable, printed on the bag
+  status       CastingOrderStatus @default(PENDING)
+  currentStage CastingStage?
+
+  // Storefront order reference
+  externalOrderId    String
+  externalLineItemId String?
+  customerReference  String? // storefront customer id; no PII stored here
+
+  // What to make
+  settingVariantId String    @db.Uuid
+  metal            MetalType
+  cadId            String
+  ringSize         Decimal   @db.Decimal(4, 2)
+  engraving        String?
+  notes            String?
+
+  // Centre stone: at most one of the two references is set
+  centerDiamondId       String? @db.Uuid
+  centerMerchantStockId String? @db.Uuid
+  centerStoneSnapshot   Json // normalised stone attributes at time of order
+
+  // Price snapshot
+  castingCost  Decimal @db.Decimal(12, 2)
+  stoneCost    Decimal @db.Decimal(12, 2)
+  retailTotal  Decimal @db.Decimal(12, 2)
+  currency     String  @default("USD") @db.Char(3)
+  markupRuleId String? @db.Uuid
+
+  // Routing and shipping
+  vendorId       String?   @db.Uuid
+  dueAt          DateTime? @db.Timestamptz(3)
+  shippedAt      DateTime? @db.Timestamptz(3)
+  carrier        String?
+  trackingNumber String?
+  canceledAt     DateTime? @db.Timestamptz(3)
+  cancelReason   String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  settingVariant      VirtualSettingVariant @relation(fields: [settingVariantId], references: [id], onDelete: Restrict)
+  centerDiamond       DiamondCache?         @relation(fields: [centerDiamondId], references: [id], onDelete: SetNull)
+  centerMerchantStock CustomMerchantStock?  @relation(fields: [centerMerchantStockId], references: [id], onDelete: SetNull)
+  markupRule          MarkupRule?           @relation(fields: [markupRuleId], references: [id], onDelete: SetNull)
+  vendor              CastingVendor?        @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  routeSteps          CastingRouteStep[]
+
+  // Idempotency for storefront order webhooks
+  @@unique([tenantId, externalOrderId, externalLineItemId])
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([vendorId, status, dueAt])
+  @@index([settingVariantId])
+  @@index([centerDiamondId])
+  @@index([centerMerchantStockId])
+  @@index([markupRuleId])
+  @@map("casting_orders")
+}
+
+/// Ordered stops on a job bag's route through production.
+model CastingRouteStep {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId     String          @db.Uuid
+  sequence    Int
+  stage       CastingStage
+  status      RouteStepStatus @default(PENDING)
+  vendorId    String?         @db.Uuid // overrides the order's vendor for this stop
+  operator    String?
+  notes       String?
+  startedAt   DateTime?       @db.Timestamptz(3)
+  completedAt DateTime?       @db.Timestamptz(3)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+
+  order  CastingOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendor CastingVendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, sequence])
+  @@index([vendorId, status, stage])
+  @@map("casting_route_steps")
+}

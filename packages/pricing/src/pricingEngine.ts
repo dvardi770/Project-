@@ -97,6 +97,19 @@ function specificity(rule: MarkupRuleInput): number {
 }
 
 /**
+ * Rank order of rules: highest priority, then most specific, then oldest.
+ * Exported so SQL built from a matrix can evaluate rules in the same order.
+ */
+export function compareMarkupRules(a: MarkupRuleInput, b: MarkupRuleInput): number {
+  return (
+    b.priority - a.priority ||
+    specificity(b) - specificity(a) ||
+    a.createdAt.getTime() - b.createdAt.getTime() ||
+    a.id.localeCompare(b.id)
+  );
+}
+
+/**
  * Pick the rule that prices this item: highest priority first, then the most
  * specific rule, then the oldest (so the outcome never depends on row order).
  * Returns null when no active rule matches.
@@ -122,13 +135,7 @@ export function selectMarkupRule(
       inRange(cost, rule.costMin, rule.costMax),
   );
 
-  matches.sort(
-    (a, b) =>
-      b.priority - a.priority ||
-      specificity(b) - specificity(a) ||
-      a.createdAt.getTime() - b.createdAt.getTime() ||
-      a.id.localeCompare(b.id),
-  );
+  matches.sort(compareMarkupRules);
   return matches[0] ?? null;
 }
 

@@ -66,7 +66,8 @@ export function registerTenantAuth(app: FastifyInstance, deps: AppDeps): void {
 
   app.decorateRequest('tenant');
 
-  app.addHook('onRequest', async (request) => {
+  // preParsing runs after the rate limiter (onRequest) and before the body is read.
+  app.addHook('preParsing', async (request) => {
     if (request.method === 'OPTIONS') return; // CORS preflight carries no key
 
     const rawKey = extractKey(request);

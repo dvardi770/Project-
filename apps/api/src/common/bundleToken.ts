@@ -10,11 +10,14 @@ export interface BundleClaims {
   bundleId: string;
   tenantId: string;
   settingVariantId: string;
-  diamondId: string;
+  stoneSource: 'FEED' | 'MERCHANT';
+  stoneId: string;
+  /** Markup rule that priced the stone, if any. */
+  stoneRuleId: string | null;
   ringSize: string;
   engraving: string | null;
   settingPrice: string;
-  diamondPrice: string;
+  stonePrice: string;
   total: string;
   currency: string;
   /** Unix seconds. */

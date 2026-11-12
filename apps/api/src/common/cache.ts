@@ -89,3 +89,33 @@ export function ttlMemo<T>(ttlMs: number, load: (key: string) => Promise<T>) {
   };
   return Object.assign(get, { clear: () => entries.clear() });
 }
+
+const INVENTORY_EPOCH_KEY = 'inventory:epoch';
+
+/**
+ * Search results are cached under the current inventory epoch. Bumping it
+ * (when an order takes a stone, or a feed sync finishes) orphans every cached
+ * result at once, so a sold stone never lingers in search.
+ */
+export async function inventoryEpoch(cache: Cache): Promise<string> {
+  return (await cache.get<string>(INVENTORY_EPOCH_KEY)) ?? '0';
+}
+
+export async function bumpInventoryEpoch(cache: Cache): Promise<void> {
+  await cache.set(INVENTORY_EPOCH_KEY, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, 30 * 86_400);
+}
+
+const inFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * Collapse concurrent identical loads into one. When a popular search expires
+ * from the cache, the first request recomputes it and the others wait for that
+ * result instead of each running the same query.
+ */
+export function singleFlight<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const running = inFlight.get(key) as Promise<T> | undefined;
+  if (running) return running;
+  const started = load().finally(() => inFlight.delete(key));
+  inFlight.set(key, started);
+  return started;
+}

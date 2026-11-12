@@ -23,6 +23,9 @@ export const conflict = (code: string, message: string) => new HttpError(409, co
 export const unprocessable = (code: string, message: string, details?: unknown) =>
   new HttpError(422, code, message, details);
 
+export const serviceUnavailable = (code: string, message: string) => new HttpError(503, code, message);
+export const badGateway = (code: string, message: string) => new HttpError(502, code, message);
+
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err: FastifyError | HttpError | ZodError, request, reply) => {
     if (err instanceof ZodError) {

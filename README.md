@@ -16,7 +16,9 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   │   ├── routes/
 │   │   │   │   ├── diamonds.ts     # GET  /api/v1/diamonds
 │   │   │   │   ├── settings.ts     # GET  /api/v1/settings
-│   │   │   │   └── cart.ts         # POST /api/v1/bundle
+│   │   │   │   ├── cart.ts         # POST /api/v1/bundle, POST /api/v1/checkout
+│   │   │   │   └── webhooks.ts     # POST /webhooks/:platform/:tenantId
+│   │   │   ├── services/           # bundle resolution, order intake
 │   │   │   └── modules/            # dashboard-side features (to come)
 │   │   └── test/                   # integration tests (real Postgres)
 │   ├── worker/                 # background jobs
@@ -40,8 +42,8 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │       ├── nivoda/nivodaIngestor.ts     # GraphQL auth, pagination, upsert into DiamondCache
 │   │       ├── rapnet/rapnetAdapter.ts      # RapNet JSON / CSV -> NormalizedDiamond
 │   │       └── normalizer/                  # shared grading vocabulary + DiamondCache writer
-│   ├── platforms/              # storefront connectors
-│   │   └── src/{shopify,woocommerce,wix}/
+│   ├── platforms/              # storefront connectors: checkout creation, webhook verification
+│   │   └── src/{shopify,woocommerce,wix}/ + secretBox.ts (credential encryption)
 │   ├── pricing/                # markup engine
 │   │   └── src/pricingEngine.ts
 │   ├── shared/                 # cross-app types, validation schemas, constants
@@ -76,3 +78,30 @@ API integration tests need a disposable, migrated Postgres:
 DATABASE_URL=$TEST_DATABASE_URL pnpm --filter @jewelry/db migrate:deploy
 TEST_DATABASE_URL=postgresql://... TEST_REDIS_URL=redis://... pnpm test
 ```
+
+## Connecting a store
+
+Checkout and order webhooks need the store's credentials, stored encrypted with
+`CREDENTIALS_ENCRYPTION_KEY`. Put them in a JSON file and run:
+
+```
+pnpm --filter @jewelry/api set-credentials <tenant-slug> ./secrets.json
+```
+
+The command prints the webhook URL to register on the store. `secrets.json` is
+`{ "credentials": { ... }, "webhookSecret": "..." }` where:
+
+| Platform | `credentials` | `webhookSecret` | Webhook to register |
+|---|---|---|---|
+| Shopify | `shopDomain` (`x.myshopify.com`), `accessToken` (Admin API, `write_draft_orders`) | the app's API secret | `orders/paid` |
+| WooCommerce | `siteUrl` (https), `consumerKey`, `consumerSecret`, `placeholderProductId` (a hidden "Custom Ring" product) | the secret set on the webhook | Order updated |
+| Wix | `apiKey`, `siteId` | the Wix app's public key (PEM) | eCommerce Order Approved |
+
+## Purchase flow
+
+1. `POST /api/v1/bundle` validates and prices a setting + stone and returns a signed quote token.
+2. `POST /api/v1/checkout` takes the token, records a checkout session and creates the order on the
+   store's platform at the quoted price, returning the URL where the shopper pays.
+3. The platform calls `POST /webhooks/:platform/:tenantId` when the order is paid. The order is matched
+   to its checkout session and becomes a casting order (job bag); the stone is taken out of stock.
+   Orders that arrive underpaid, or for a stone that is no longer available, are created `ON_HOLD`.

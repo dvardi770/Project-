@@ -1,52 +1,49 @@
 /**
- * POST /api/v1/bundle — turn a chosen setting + diamond into one cart line.
+ * POST /api/v1/bundle   — quote a setting + stone as one cart line.
+ * POST /api/v1/checkout — turn a quoted bundle into a payable checkout on the
+ *                         tenant's storefront platform.
  *
- * Everything is re-read and re-priced on the server; nothing the browser says
- * about price is trusted. The response carries a signed token recording what
- * was priced, which the storefront passes through the cart (as a hidden line
- * item property) and the order webhook verifies with verifyBundleToken().
+ * Nothing the browser says about price is trusted. /bundle re-reads and
+ * re-prices everything and returns a signed token recording the quote.
+ * /checkout accepts only that token, records the quote as a CheckoutSession and
+ * creates the order on the platform itself, with the price set server-side.
+ * The paid-order webhook is matched back to the session (see orderIntake).
  */
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { Prisma } from '@jewelry/db';
-import { calculateRetailPrice } from '@jewelry/pricing';
+import { BUNDLE_ID_PROPERTY, PlatformError, createConnector, decryptJson } from '@jewelry/platforms';
 import { z } from 'zod';
-import { signBundleToken } from '../common/bundleToken';
+import { signBundleToken, verifyBundleToken } from '../common/bundleToken';
 import type { AppDeps } from '../common/context';
-import { conflict, notFound, unprocessable } from '../common/errors';
+import { badGateway, badRequest, conflict, serviceUnavailable } from '../common/errors';
 import type { Money } from '../common/query';
+import { resolveBundle } from '../services/bundle';
 
-const bodySchema = z.object({
+const bundleBody = z.object({
   settingVariantId: z.uuid(),
   diamondId: z.uuid(),
+  /** Which inventory the diamond came from (the `inventory` field in search results). */
+  inventory: z.enum(['FEED', 'MERCHANT']).default('FEED'),
   ringSize: z.coerce.number().min(1).max(20),
   engraving: z
     .string()
     .trim()
     .max(40)
     // printable characters only: this text is cut into metal and shown in carts
-    .regex(/^[\p{L}\p{N}\p{P}\p{Zs}♥]*$/u, 'contains unsupported characters')
+    .regex(/^[\p{L}\p{N}\p{P}\p{Zs}♥+&]*$/u, 'contains unsupported characters')
     .optional(),
 });
 
-const title = (s: string) =>
-  s
-    .toLowerCase()
-    .split('_')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+const checkoutBody = z.object({ token: z.string().min(1).max(4000) });
 
-/** WHITE_GOLD_14K → "14K White Gold", PLATINUM_950 → "Platinum 950". */
-function metalLabel(metal: string): string {
-  const karat = metal.match(/^(.*)_(\d+K)$/);
-  return karat ? `${karat[2]} ${title(karat[1]!)}` : title(metal);
-}
+/** How long a created checkout is expected to stay payable; informational. */
+const CHECKOUT_SESSION_DAYS = 7;
 
 export interface BundleResponse {
   bundleId: string;
-  /** Unix seconds; after this the bundle must be rebuilt. */
+  /** Unix seconds; after this the bundle must be quoted again. */
   expiresAt: number;
-  /** Signed record of what was priced. Verify server-side before fulfilling. */
+  /** Signed record of the quote. Send it to POST /api/v1/checkout. */
   token: string;
   lineItem: {
     title: string;
@@ -63,132 +60,60 @@ export interface BundleResponse {
   };
   components: [
     { type: 'SETTING'; id: string; settingId: string; sku: string; name: string; metal: string; price: Money },
-    { type: 'DIAMOND'; id: string; description: string; certificate: string | null; price: Money },
+    {
+      type: 'DIAMOND';
+      id: string;
+      inventory: 'FEED' | 'MERCHANT';
+      description: string;
+      certificate: string | null;
+      price: Money;
+    },
   ];
+}
+
+export interface CheckoutResponse {
+  bundleId: string;
+  /** Send the shopper here to pay. */
+  checkoutUrl: string;
 }
 
 export async function cartRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, config } = deps;
+  const limited = { config: { rateLimit: { max: config.checkoutRateLimitPerMinute, timeWindow: '1 minute' } } };
 
-  app.post('/bundle', async (request, reply): Promise<BundleResponse> => {
-    const body = bodySchema.parse(request.body);
-    const { tenantId, feedSources } = request.tenant;
+  app.post('/bundle', limited, async (request, reply): Promise<BundleResponse> => {
+    const body = bundleBody.parse(request.body);
+    const bundle = await resolveBundle(deps, request.tenant, {
+      settingVariantId: body.settingVariantId,
+      stoneSource: body.inventory,
+      stoneId: body.diamondId,
+      ringSize: body.ringSize,
+      engraving: body.engraving,
+    });
 
-    const [variant, diamond, matrix] = await Promise.all([
-      db.virtualSettingVariant.findFirst({
-        where: {
-          id: body.settingVariantId,
-          isActive: true,
-          setting: { isActive: true, OR: [{ tenantId }, { tenantId: null }] },
-        },
-        include: { setting: true },
-      }),
-      db.diamondCache.findFirst({
-        where: { id: body.diamondId, source: { in: feedSources } },
-      }),
-      deps.markupMatrix(tenantId),
-    ]);
-
-    if (!variant) throw notFound('setting_not_found', 'Setting variant not found.');
-    if (!diamond) throw notFound('diamond_not_found', 'Diamond not found.');
-    if (diamond.availability !== 'AVAILABLE') {
-      throw conflict('diamond_unavailable', 'This diamond is no longer available.');
-    }
-
-    // ── Pricing ── (first: an item that is not for sale must look like it does not exist)
-    const { setting } = variant;
-    const settingPrice = calculateRetailPrice(
-      { wholesalePrice: variant.castingCost, currency: variant.currency, target: 'SETTING' },
-      matrix.rules,
-    );
-    const diamondPrice = calculateRetailPrice(
-      {
-        wholesalePrice: diamond.wholesalePrice,
-        currency: diamond.currency,
-        carat: diamond.carat,
-        origin: diamond.origin,
-        feedSource: diamond.source,
-        target: 'FEED_DIAMOND',
-      },
-      matrix.rules,
-    );
-    // Same rule as search: an item no markup rule covers is not for sale.
-    if (!settingPrice) throw notFound('setting_not_found', 'Setting variant not found.');
-    if (!diamondPrice) throw notFound('diamond_not_found', 'Diamond not found.');
-    if (settingPrice.currency !== diamondPrice.currency) {
-      throw unprocessable('currency_mismatch', 'Setting and diamond are priced in different currencies.');
-    }
-
-    // ── Compatibility ──
-    if (!setting.compatibleShapes.includes(diamond.shape)) {
-      throw unprocessable('incompatible_shape', `This setting does not accept ${title(diamond.shape)} stones.`, {
-        compatibleShapes: setting.compatibleShapes,
-      });
-    }
-    if (diamond.carat.lt(setting.centerCaratMin) || diamond.carat.gt(setting.centerCaratMax)) {
-      throw unprocessable('incompatible_carat', 'This diamond is outside the carat range of the setting.', {
-        min: setting.centerCaratMin.toNumber(),
-        max: setting.centerCaratMax.toNumber(),
-      });
-    }
-    const ringSize = new Prisma.Decimal(body.ringSize);
-    if (
-      (setting.minRingSize && ringSize.lt(setting.minRingSize)) ||
-      (setting.maxRingSize && ringSize.gt(setting.maxRingSize))
-    ) {
-      throw unprocessable('ring_size_unavailable', 'This setting is not made in that ring size.', {
-        min: setting.minRingSize?.toNumber() ?? null,
-        max: setting.maxRingSize?.toNumber() ?? null,
-      });
-    }
-
-    const currency = settingPrice.currency;
-    const total = settingPrice.retailPrice.plus(diamondPrice.retailPrice);
-    const money = (d: Prisma.Decimal): Money => ({ amount: d.toFixed(2), currency });
-
-    // ── Line item ──
     const bundleId = randomUUID();
     const expiresAt = Math.floor(Date.now() / 1000) + config.bundleTtlSeconds;
-    const engraving = body.engraving || null;
-    const metal = metalLabel(variant.metal);
-    const grades = [diamond.color, diamond.clarity, diamond.cut ? title(diamond.cut) : null].filter(Boolean);
-    const diamondDescription = [
-      `${diamond.carat.toFixed(2)}ct`,
-      title(diamond.shape),
-      diamond.origin === 'LAB_GROWN' ? 'Lab-Grown' : 'Natural',
-      ...grades,
-    ].join(' ');
-    const certificate =
-      diamond.lab !== 'NONE' && diamond.certificateNumber ? `${diamond.lab} ${diamond.certificateNumber}` : null;
+    const money = (d: { toFixed(n: number): string }): Money => ({ amount: d.toFixed(2), currency: bundle.currency });
 
     const token = signBundleToken(
       {
         v: 1,
         bundleId,
-        tenantId,
-        settingVariantId: variant.id,
-        diamondId: diamond.id,
-        ringSize: ringSize.toString(),
-        engraving,
-        settingPrice: settingPrice.retailPrice.toFixed(2),
-        diamondPrice: diamondPrice.retailPrice.toFixed(2),
-        total: total.toFixed(2),
-        currency,
+        tenantId: request.tenant.tenantId,
+        settingVariantId: bundle.variant.id,
+        stoneSource: bundle.stone.source,
+        stoneId: bundle.stone.id,
+        stoneRuleId: bundle.stoneRuleId,
+        ringSize: bundle.ringSize.toString(),
+        engraving: bundle.engraving,
+        settingPrice: bundle.settingPrice.toFixed(2),
+        stonePrice: bundle.stonePrice.toFixed(2),
+        total: bundle.total.toFixed(2),
+        currency: bundle.currency,
         expiresAt,
       },
       config.bundleSigningSecret,
     );
-
-    const properties: Record<string, string> = {
-      Setting: setting.name,
-      Metal: metal,
-      'Ring size': ringSize.toString(),
-      Diamond: diamondDescription,
-      ...(certificate ? { Certificate: certificate } : {}),
-      ...(engraving ? { Engraving: engraving } : {}),
-      _bundle_id: bundleId,
-      _bundle_token: token,
-    };
 
     reply.header('cache-control', 'no-store');
     return {
@@ -196,32 +121,115 @@ export async function cartRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
       expiresAt,
       token,
       lineItem: {
-        title: `${setting.name} in ${metal} with ${diamond.carat.toFixed(2)}ct ${title(diamond.shape)} Diamond`,
-        sku: `${setting.sku}-${variant.metal}`,
+        title: bundle.title,
+        sku: bundle.sku,
         quantity: 1,
-        price: money(total),
-        imageUrl: variant.imageUrls[0] ?? setting.thumbnailUrl ?? diamond.imageUrl,
+        price: money(bundle.total),
+        imageUrl: bundle.imageUrl,
         requiresShipping: true,
-        properties,
+        properties: { ...bundle.properties, [BUNDLE_ID_PROPERTY]: bundleId },
       },
       components: [
         {
           type: 'SETTING',
-          id: variant.id,
-          settingId: setting.id,
-          sku: setting.sku,
-          name: setting.name,
-          metal: variant.metal,
-          price: money(settingPrice.retailPrice),
+          id: bundle.variant.id,
+          settingId: bundle.setting.id,
+          sku: bundle.setting.sku,
+          name: bundle.setting.name,
+          metal: bundle.variant.metal,
+          price: money(bundle.settingPrice),
         },
         {
           type: 'DIAMOND',
-          id: diamond.id,
-          description: diamondDescription,
-          certificate,
-          price: money(diamondPrice.retailPrice),
+          id: bundle.stone.id,
+          inventory: bundle.stone.source,
+          description: bundle.stoneDescription,
+          certificate: bundle.certificate,
+          price: money(bundle.stonePrice),
         },
       ],
     };
+  });
+
+  app.post('/checkout', limited, async (request, reply): Promise<CheckoutResponse> => {
+    const { token } = checkoutBody.parse(request.body);
+    const claims = verifyBundleToken(token, config.bundleSigningSecret);
+    if (!claims || claims.tenantId !== request.tenant.tenantId) {
+      throw badRequest('invalid_bundle_token', 'This bundle is invalid or has expired. Build it again.');
+    }
+    reply.header('cache-control', 'no-store');
+
+    // Same token twice (double click, retry): hand back the checkout already made.
+    const existing = await db.checkoutSession.findUnique({ where: { id: claims.bundleId } });
+    if (existing?.checkoutUrl) {
+      if (existing.status !== 'OPEN') throw conflict('bundle_already_ordered', 'This bundle has already been ordered.');
+      return { bundleId: existing.id, checkoutUrl: existing.checkoutUrl };
+    }
+
+    if (!config.credentialsKey) {
+      throw serviceUnavailable('checkout_not_configured', 'Checkout is not configured on this server.');
+    }
+    const tenant = await db.tenant.findUniqueOrThrow({ where: { id: claims.tenantId } });
+    if (!tenant.platformCredentialsEnc) {
+      throw conflict('platform_not_connected', 'This store has not connected its e-commerce platform yet.');
+    }
+
+    // Availability and compatibility may have changed since the quote. The
+    // price is honoured as quoted for the life of the token.
+    const bundle = await resolveBundle(deps, request.tenant, {
+      settingVariantId: claims.settingVariantId,
+      stoneSource: claims.stoneSource,
+      stoneId: claims.stoneId,
+      ringSize: claims.ringSize,
+      engraving: claims.engraving,
+    });
+
+    // Record the quote before calling the platform: a checkout that exists on
+    // the platform but not here could be paid and never matched.
+    if (!existing) {
+      await db.checkoutSession.create({
+        data: {
+          id: claims.bundleId,
+          tenantId: claims.tenantId,
+          platform: tenant.platformType,
+          settingVariantId: claims.settingVariantId,
+          stoneSource: claims.stoneSource,
+          stoneId: claims.stoneId,
+          ringSize: claims.ringSize,
+          engraving: claims.engraving,
+          settingPrice: claims.settingPrice,
+          stonePrice: claims.stonePrice,
+          total: claims.total,
+          currency: claims.currency,
+          stoneMarkupRuleId: claims.stoneRuleId,
+          expiresAt: new Date(Date.now() + CHECKOUT_SESSION_DAYS * 86_400_000),
+        },
+      });
+    }
+
+    let created;
+    try {
+      const credentials = decryptJson<unknown>(tenant.platformCredentialsEnc, config.credentialsKey);
+      const connector = createConnector(tenant.platformType, credentials, { fetch: deps.fetch });
+      created = await connector.createCheckout({
+        bundleId: claims.bundleId,
+        title: bundle.title,
+        sku: bundle.sku,
+        amount: claims.total,
+        currency: claims.currency,
+        imageUrl: bundle.imageUrl,
+        properties: bundle.properties,
+      });
+    } catch (err) {
+      request.log.error({ err, tenantId: tenant.id }, 'platform checkout failed');
+      const detail = err instanceof PlatformError ? '' : ' (stored credentials could not be read)';
+      throw badGateway('platform_error', `The store's e-commerce platform did not accept the checkout${detail}.`);
+    }
+
+    await db.checkoutSession.update({
+      where: { id: claims.bundleId },
+      data: { externalCheckoutId: created.externalCheckoutId, checkoutUrl: created.checkoutUrl },
+    });
+    return { bundleId: claims.bundleId, checkoutUrl: created.checkoutUrl };
   });
 }

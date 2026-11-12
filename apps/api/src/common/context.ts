@@ -9,4 +9,6 @@ export interface AppDeps {
   cache: Cache;
   config: AppConfig;
   markupMatrix: MarkupMatrixLoader;
+  /** HTTP client used to call storefront platforms; replaceable in tests. */
+  fetch?: typeof fetch;
 }

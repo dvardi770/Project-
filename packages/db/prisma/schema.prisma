@@ -203,6 +203,17 @@ enum CastingStage {
   PACKAGING
 }
 
+enum StoneSource {
+  FEED // DiamondCache
+  MERCHANT // CustomMerchantStock
+}
+
+enum CheckoutStatus {
+  OPEN
+  ORDERED
+  EXPIRED
+}
+
 enum RouteStepStatus {
   PENDING
   IN_PROGRESS
@@ -237,13 +248,14 @@ model Tenant {
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
-  domains         TenantDomain[]
-  apiKeys         ApiKey[]
-  feedConnections FeedConnection[]
-  markupRules     MarkupRule[]
-  virtualSettings VirtualSetting[]
-  merchantStock   CustomMerchantStock[]
-  castingOrders   CastingOrder[]
+  domains          TenantDomain[]
+  apiKeys          ApiKey[]
+  feedConnections  FeedConnection[]
+  markupRules      MarkupRule[]
+  virtualSettings  VirtualSetting[]
+  merchantStock    CustomMerchantStock[]
+  castingOrders    CastingOrder[]
+  checkoutSessions CheckoutSession[]
 
   @@unique([platformType, platformStoreId])
   @@index([subscriptionStatus])
@@ -447,7 +459,7 @@ model DiamondCache {
   // The 4 Cs and grading
   origin       StoneOrigin
   shape        DiamondShape
-  carat        Decimal      @db.Decimal(6, 3)
+  carat        Decimal         @db.Decimal(6, 3)
   color        DiamondColor? // NULL for fancy colour
   clarity      DiamondClarity?
   cut          CutGrade?
@@ -519,7 +531,7 @@ model CustomMerchantStock {
   // Stone attributes (same vocabulary as DiamondCache)
   origin            StoneOrigin?
   shape             DiamondShape?
-  carat             Decimal?      @db.Decimal(6, 3)
+  carat             Decimal?        @db.Decimal(6, 3)
   color             DiamondColor?
   clarity           DiamondClarity?
   cut               CutGrade?
@@ -529,9 +541,9 @@ model CustomMerchantStock {
   lab               GradingLab?
   certificateNumber String?
   certificateUrl    String?
-  lengthMm          Decimal?      @db.Decimal(5, 2)
-  widthMm           Decimal?      @db.Decimal(5, 2)
-  depthMm           Decimal?      @db.Decimal(5, 2)
+  lengthMm          Decimal?        @db.Decimal(5, 2)
+  widthMm           Decimal?        @db.Decimal(5, 2)
+  depthMm           Decimal?        @db.Decimal(5, 2)
 
   // Setting attributes
   settingVariantId String?  @db.Uuid
@@ -555,6 +567,43 @@ model CustomMerchantStock {
 }
 
 // ─── Fulfilment ──────────────────────────────────────────────────────────────
+
+/// A priced setting + stone bundle handed to the storefront's checkout. It is
+/// the server-side record of what was quoted; the order webhook matches a paid
+/// order back to it instead of trusting anything in the cart.
+model CheckoutSession {
+  id       String         @id @db.Uuid // the bundle id
+  tenantId String         @db.Uuid
+  platform PlatformType
+  status   CheckoutStatus @default(OPEN)
+
+  // Draft order / order / checkout id on the storefront platform
+  externalCheckoutId String?
+  checkoutUrl        String?
+
+  settingVariantId String      @db.Uuid
+  stoneSource      StoneSource
+  stoneId          String      @db.Uuid
+  ringSize         Decimal     @db.Decimal(4, 2)
+  engraving        String?
+
+  settingPrice      Decimal @db.Decimal(12, 2)
+  stonePrice        Decimal @db.Decimal(12, 2)
+  total             Decimal @db.Decimal(12, 2)
+  currency          String  @db.Char(3)
+  stoneMarkupRuleId String? @db.Uuid
+
+  expiresAt DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  castingOrder CastingOrder?
+
+  @@unique([tenantId, externalCheckoutId])
+  @@index([tenantId, status])
+  @@map("checkout_sessions")
+}
 
 /// Casting house / bench that job bags are routed to.
 model CastingVendor {
@@ -606,6 +655,10 @@ model CastingOrder {
   currency     String  @default("USD") @db.Char(3)
   markupRuleId String? @db.Uuid
 
+  // The checkout this order was paid through; unique, so a session can never
+  // produce two job bags.
+  checkoutSessionId String? @unique @db.Uuid
+
   // Routing and shipping
   vendorId       String?   @db.Uuid
   dueAt          DateTime? @db.Timestamptz(3)
@@ -624,6 +677,7 @@ model CastingOrder {
   centerMerchantStock CustomMerchantStock?  @relation(fields: [centerMerchantStockId], references: [id], onDelete: SetNull)
   markupRule          MarkupRule?           @relation(fields: [markupRuleId], references: [id], onDelete: SetNull)
   vendor              CastingVendor?        @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  checkoutSession     CheckoutSession?      @relation(fields: [checkoutSessionId], references: [id], onDelete: SetNull)
   routeSteps          CastingRouteStep[]
 
   // Idempotency for storefront order webhooks

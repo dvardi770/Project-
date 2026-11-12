@@ -105,3 +105,7 @@ The command prints the webhook URL to register on the store. `secrets.json` is
 3. The platform calls `POST /webhooks/:platform/:tenantId` when the order is paid. The order is matched
    to its checkout session and becomes a casting order (job bag); the stone is taken out of stock.
    Orders that arrive underpaid, or for a stone that is no longer available, are created `ON_HOLD`.
+
+## Working with Claude Code
+
+Open this repository in Claude Code. Claude Code reads the root `CLAUDE.md` for project-specific guidance.

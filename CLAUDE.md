@@ -2,7 +2,39 @@
 
 ## Project context
 
-This repository is being initialized. Its language, framework, purpose, and build/test commands have not been established yet. Inspect the existing files before making assumptions, and update this file as the project takes shape.
+B2B SaaS that connects retail jewelers' storefronts (Shopify, WooCommerce, Wix) to virtual diamond
+feeds (Nivoda; RapNet adapter present but unused) through an embeddable ring builder. See `README.md`
+for the layout, purchase flow and store setup.
+
+- TypeScript pnpm workspace, Node 20+. Packages export their TypeScript source directly (run with `tsx`).
+- `packages/db` — Prisma 6 schema and migrations (PostgreSQL). Partial indexes and check constraints
+  live in hand-written migrations because the schema language cannot express them.
+- `packages/pricing` — markup engine. It is the single source of truth for retail prices; the SQL in
+  `apps/api/src/routes/diamonds.ts` mirrors it only for filtering and sorting.
+- `packages/feeds` — Nivoda ingestor, RapNet adapter, shared grading normaliser.
+- `packages/platforms` — storefront connectors and credential encryption.
+- `apps/api` — Fastify storefront API. `apps/worker`, `apps/dashboard`, `apps/widget` are placeholders.
+
+## Commands
+
+```
+pnpm install                                  # also generates the Prisma client
+pnpm typecheck
+pnpm test                                     # unit tests; API integration tests skip without a database
+DATABASE_URL=... pnpm --filter @jewelry/db migrate:deploy
+TEST_DATABASE_URL=... [TEST_REDIS_URL=...] pnpm test   # full suite, needs a disposable migrated Postgres
+pnpm dev:api
+```
+
+New migrations: `prisma migrate dev` needs an interactive terminal; in a non-interactive session
+generate SQL with `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script`.
+
+## Things to know
+
+- Wholesale price, supplier name, casting cost and CAD ids must never appear in API responses.
+- An item that no markup rule prices is not for sale and must look like it does not exist.
+- The Nivoda query and the Shopify, WooCommerce and Wix connectors were written without access to the
+  vendors' documentation and have not been run against live accounts.
 
 ## Working agreements
 

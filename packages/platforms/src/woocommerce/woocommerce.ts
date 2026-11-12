@@ -6,6 +6,10 @@
  * items must reference a product, so each store needs one hidden placeholder
  * product ("Custom Ring"). The shopper pays on the order-pay page.
  *
+ * Native cart: a hidden one-off product is created at the bundle price; the
+ * widget adds it through WooCommerce's own add-to-cart AJAX endpoint. The paid
+ * order line is matched back by that product's id.
+ *
  * Webhook: subscribe to "Order updated". Signed with HMAC-SHA256 over the raw
  * body, base64, in X-WC-Webhook-Signature. An order counts as paid once its
  * status is processing or completed.
@@ -17,6 +21,7 @@ import {
   header,
   requestJson,
   type CheckoutLineItem,
+  type CreatedCartItem,
   type CreatedCheckout,
   type HttpOptions,
   type NormalizedOrder,
@@ -95,6 +100,40 @@ export class WooCommerceConnector implements PlatformConnector {
       `${this.base}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${encodeURIComponent(order.order_key ?? '')}`;
     return { checkoutUrl, externalCheckoutId: String(order.id) };
   }
+
+  async createCartItem(item: CheckoutLineItem): Promise<CreatedCartItem> {
+    const { consumerKey, consumerSecret } = this.credentials;
+    const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+    const description = Object.entries(item.properties)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n');
+
+    const product = await requestJson<{ id?: number }>(
+      'WOOCOMMERCE',
+      `${this.base}/wp-json/wc/v3/products`,
+      {
+        method: 'POST',
+        headers: { authorization: `Basic ${auth}` },
+        body: {
+          name: item.title,
+          type: 'simple',
+          status: 'publish',
+          catalog_visibility: 'hidden',
+          regular_price: item.amount,
+          sku: `${item.sku}-${item.bundleId.slice(0, 8)}`,
+          short_description: description,
+          sold_individually: true,
+          manage_stock: true,
+          stock_quantity: 1,
+          meta_data: [{ key: BUNDLE_ID_PROPERTY, value: item.bundleId }],
+          ...(item.imageUrl ? { images: [{ src: item.imageUrl }] } : {}),
+        },
+      },
+      this.http,
+    );
+    if (!product.id) throw new PlatformError('WOOCOMMERCE', 'product was created without an id');
+    return { purchasableId: String(product.id) };
+  }
 }
 
 export function verifyWooCommerceWebhook(rawBody: Buffer, headers: WebhookHeaders, secret: string): boolean {
@@ -113,6 +152,7 @@ interface WooOrderPayload {
   customer_id?: number;
   line_items?: {
     id?: number;
+    product_id?: number;
     quantity?: number;
     price?: number | string;
     total?: string;
@@ -137,6 +177,7 @@ export function parseWooCommerceOrder(rawBody: Buffer): NormalizedOrder | null {
       const unit = li.total !== undefined ? (Number(li.total) / quantity).toFixed(2) : String(li.price ?? '0');
       return {
         externalLineItemId: String(li.id ?? ''),
+        purchasableId: li.product_id ? String(li.product_id) : null,
         unitPrice: unit,
         quantity,
         bundleId: bundle?.value != null ? String(bundle.value) : null,

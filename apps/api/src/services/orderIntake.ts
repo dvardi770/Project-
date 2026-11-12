@@ -53,8 +53,16 @@ async function matchLines(
 ): Promise<{ line: NormalizedOrderLine; session: CheckoutSession }[]> {
   const matches: { line: NormalizedOrderLine; session: CheckoutSession }[] = [];
   for (const line of order.lines) {
-    if (!line.bundleId || !UUID.test(line.bundleId)) continue;
-    const session = await db.checkoutSession.findFirst({ where: { id: line.bundleId, tenantId } });
+    let session: CheckoutSession | null = null;
+    if (line.bundleId && UUID.test(line.bundleId)) {
+      session = await db.checkoutSession.findFirst({ where: { id: line.bundleId, tenantId } });
+    }
+    // Native-cart bundles are sold as a one-off product; its id identifies the bundle.
+    if (!session && line.purchasableId) {
+      session = await db.checkoutSession.findFirst({
+        where: { tenantId, platform: order.platform, externalCheckoutId: line.purchasableId, checkoutUrl: null },
+      });
+    }
     if (session) matches.push({ line, session });
   }
   // Platforms that cannot carry a hidden property are matched by the checkout

@@ -207,17 +207,25 @@ describe.skipIf(!url)('storefront API', () => {
         const body = JSON.parse(String(init.body));
         platformCalls.push({ url, headers: init.headers as Record<string, string>, body });
         const n = ++draftSeq;
-        return new Response(
-          JSON.stringify({
-            data: {
+        const q: string = body.query;
+        const data = q.includes('draftOrderCreate')
+          ? {
               draftOrderCreate: {
                 draftOrder: { id: `gid://shopify/DraftOrder/${n}`, invoiceUrl: `https://example.myshopify.com/invoices/${n}` },
                 userErrors: [],
               },
-            },
-          }),
-          { status: 200 },
-        );
+            }
+          : q.includes('productSet')
+            ? {
+                productSet: {
+                  product: { id: `gid://shopify/Product/${n}`, variants: { nodes: [{ id: `gid://shopify/ProductVariant/${9000 + n}` }] } },
+                  userErrors: [],
+                },
+              }
+            : q.includes('publishablePublish')
+              ? { publishablePublish: { userErrors: [] } }
+              : { publications: { nodes: [{ id: 'gid://shopify/Publication/1', name: 'Online Store' }, { id: 'gid://shopify/Publication/2', name: 'POS' }] } };
+        return new Response(JSON.stringify({ data }), { status: 200 });
       }) as typeof fetch,
     });
   });
@@ -415,7 +423,10 @@ describe.skipIf(!url)('storefront API', () => {
         ringSize: '6.5',
       });
       expect(verifyBundleToken(body.token, 'x'.repeat(40))).toBeNull();
-      expect(verifyBundleToken(body.token.replace(/.$/, 'A'), SECRET)).toBeNull();
+      // flip a character inside the signature (the last one only carries padding bits)
+      const [payloadPart, sig] = body.token.split('.') as [string, string];
+      const forged = `${payloadPart}.${sig[0] === 'A' ? 'B' : 'A'}${sig.slice(1)}`;
+      expect(verifyBundleToken(forged, SECRET)).toBeNull();
       expect(verifyBundleToken(body.token, SECRET, Date.now() + 3 * 3600 * 1000)).toBeNull();
     });
 
@@ -550,6 +561,38 @@ describe.skipIf(!url)('storefront API', () => {
       expect((await db.customMerchantStock.findUniqueOrThrow({ where: { id: stone.ownMarkup } })).quantity).toBe(1);
     });
 
+    it('prepares a native-cart item and matches its order by variant id', async () => {
+      const q = await quote({ settingVariantId: ids.ovalVariant, diamondId: stone.big });
+      const cartItem = (token: string) =>
+        app.inject({ method: 'POST', url: '/api/v1/cart-item', headers: { 'x-api-key': PK, origin: ORIGIN }, payload: { token } });
+      const before = platformCalls.length;
+      const res = await cartItem(q.token);
+      expect(res.statusCode).toBe(200);
+      const item = res.json();
+      expect(item).toMatchObject({ bundleId: q.bundleId, platform: 'SHOPIFY', quantity: 1 });
+      expect(item.purchasableId).toMatch(/^9\d{3}$/);
+      expect(item.properties).toMatchObject({ Metal: '14K White Gold', _bundle_id: q.bundleId });
+
+      const [pubs, set, publish] = platformCalls.slice(before).map((c) => c.body);
+      expect(pubs.query).toContain('publications');
+      expect(set.variables.input).toMatchObject({ status: 'ACTIVE', variants: [{ price: '13700.00' }] });
+      expect(publish.variables).toMatchObject({ input: [{ publicationId: 'gid://shopify/Publication/1' }] });
+
+      const calls = platformCalls.length;
+      expect((await cartItem(q.token)).json().purchasableId).toBe(item.purchasableId); // retry makes no new product
+      expect(platformCalls.length).toBe(calls);
+
+      // the paid order carries no bundle property here; the variant id identifies it
+      const paid = await webhook({
+        id: 5100,
+        currency: 'USD',
+        line_items: [{ id: 51000, variant_id: Number(item.purchasableId), price: '13700.00', quantity: 1, properties: [] }],
+      });
+      expect(paid.json().castingOrders).toHaveLength(1);
+      const job = await db.castingOrder.findUniqueOrThrow({ where: { checkoutSessionId: q.bundleId } });
+      expect(job).toMatchObject({ status: 'CONFIRMED', centerDiamondId: stone.big });
+    });
+
     it('rejects bad signatures and ignores unpaid or unrelated orders', async () => {
       expect((await webhook(order(6001, randomUUID(), '1.00'), { secret: 'wrong' })).statusCode).toBe(401);
       expect((await app.inject({ method: 'POST', url: `/webhooks/shopify/${randomUUID()}`, payload: '{}' })).statusCode).toBe(401);
@@ -558,7 +601,7 @@ describe.skipIf(!url)('storefront API', () => {
       expect(unpaid.json()).toEqual({ received: true, handled: false });
       const unrelated = await webhook(order(6003, randomUUID(), '1.00'));
       expect(unrelated.json()).toMatchObject({ handled: true, castingOrders: [] });
-      expect(await db.castingOrder.count()).toBe(2);
+      expect(await db.castingOrder.count()).toBe(3);
     });
   });
 

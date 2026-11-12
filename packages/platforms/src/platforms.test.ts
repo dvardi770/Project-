@@ -78,6 +78,22 @@ describe('WooCommerce', () => {
     });
   });
 
+  it('creates a hidden one-off product for the native cart', async () => {
+    const fetchMock = reply({ id: 777 });
+    const result = await new WooCommerceConnector(creds, { fetch: fetchMock }).createCartItem(item);
+    const { url, body } = sent(fetchMock);
+    expect(url).toBe('https://shop.example.com/wp-json/wc/v3/products');
+    expect(body).toMatchObject({
+      type: 'simple',
+      status: 'publish',
+      catalog_visibility: 'hidden',
+      regular_price: '2600.99',
+      sold_individually: true,
+      sku: 'SOL-1-WHITE_GOLD_14K-3f0c9b0e',
+    });
+    expect(result).toEqual({ purchasableId: '777' });
+  });
+
   it('requires https', () => {
     expect(() => new WooCommerceConnector({ ...creds, siteUrl: 'http://shop.example.com' })).toThrow(/https/);
   });
@@ -90,14 +106,14 @@ describe('WooCommerce', () => {
         status: 'processing',
         currency: 'USD',
         customer_id: 5,
-        line_items: [{ id: 1, quantity: 1, total: '2600.99', meta_data: [{ key: '_bundle_id', value: item.bundleId }] }],
+        line_items: [{ id: 1, product_id: 777, quantity: 1, total: '2600.99', meta_data: [{ key: '_bundle_id', value: item.bundleId }] }],
       }),
     );
     const sig = createHmac('sha256', 'whsec').update(raw).digest('base64');
     const ok = receiveOrderWebhook('WOOCOMMERCE', raw, { 'x-wc-webhook-signature': sig }, 'whsec');
     expect(ok).toMatchObject({
       ok: true,
-      order: { externalOrderId: '900', externalCheckoutId: '900', paid: true, lines: [{ unitPrice: '2600.99', bundleId: item.bundleId }] },
+      order: { externalOrderId: '900', externalCheckoutId: '900', paid: true, lines: [{ unitPrice: '2600.99', bundleId: item.bundleId, purchasableId: '777' }] },
     });
     expect(receiveOrderWebhook('WOOCOMMERCE', raw, { 'x-wc-webhook-signature': sig }, 'other')).toEqual({ ok: false, reason: 'bad_signature' });
     expect(receiveOrderWebhook('WOOCOMMERCE', raw, {}, 'whsec').ok).toBe(false);

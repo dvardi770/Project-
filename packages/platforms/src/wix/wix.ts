@@ -150,6 +150,7 @@ export function parseWixOrder(jwtPayload: Record<string, unknown>): NormalizedOr
     customerReference: order.buyerInfo?.contactId ?? null,
     lines: (order.lineItems ?? []).map((li) => ({
       externalLineItemId: li.id ?? '',
+      purchasableId: null,
       unitPrice: li.price?.amount ?? '0',
       quantity: li.quantity ?? 1,
       bundleId: null,

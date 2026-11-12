@@ -1,17 +1,27 @@
 /**
  * POST /api/v1/bundle   — quote a setting + stone as one cart line.
- * POST /api/v1/checkout — turn a quoted bundle into a payable checkout on the
- *                         tenant's storefront platform.
+ * POST /api/v1/cart-item — make a quoted bundle addable to the storefront's
+ *                          own cart (Shopify, WooCommerce).
+ * POST /api/v1/checkout  — or turn it straight into a payable checkout on the
+ *                          tenant's storefront platform (any platform).
  *
  * Nothing the browser says about price is trusted. /bundle re-reads and
  * re-prices everything and returns a signed token recording the quote.
- * /checkout accepts only that token, records the quote as a CheckoutSession and
- * creates the order on the platform itself, with the price set server-side.
+ * /cart-item and /checkout accept only that token, record the quote as a
+ * CheckoutSession and create the product or order on the platform themselves,
+ * with the price set server-side.
  * The paid-order webhook is matched back to the session (see orderIntake).
  */
 import { randomUUID } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
-import { BUNDLE_ID_PROPERTY, PlatformError, createConnector, decryptJson } from '@jewelry/platforms';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { PlatformType } from '@jewelry/db';
+import {
+  BUNDLE_ID_PROPERTY,
+  createConnector,
+  decryptJson,
+  type CheckoutLineItem,
+  type PlatformConnector,
+} from '@jewelry/platforms';
 import { z } from 'zod';
 import { signBundleToken, verifyBundleToken } from '../common/bundleToken';
 import type { AppDeps } from '../common/context';
@@ -75,6 +85,16 @@ export interface CheckoutResponse {
   bundleId: string;
   /** Send the shopper here to pay. */
   checkoutUrl: string;
+}
+
+export interface CartItemResponse {
+  bundleId: string;
+  platform: PlatformType;
+  /** Shopify: variant id for /cart/add.js. WooCommerce: product id for wc-ajax add_to_cart. */
+  purchasableId: string;
+  quantity: 1;
+  /** Line-item properties to send with the add-to-cart call where the platform supports them. */
+  properties: Record<string, string>;
 }
 
 export async function cartRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -151,21 +171,21 @@ export async function cartRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
     };
   });
 
-  app.post('/checkout', limited, async (request, reply): Promise<CheckoutResponse> => {
-    const { token } = checkoutBody.parse(request.body);
+  /**
+   * Shared front half of both hand-off routes: authenticate the quote, make
+   * sure it can still be sold, and record it as a CheckoutSession before
+   * anything is created on the platform (something payable on the platform
+   * that we have no record of could be paid and never matched).
+   */
+  async function openSession(request: FastifyRequest, token: string) {
     const claims = verifyBundleToken(token, config.bundleSigningSecret);
     if (!claims || claims.tenantId !== request.tenant.tenantId) {
       throw badRequest('invalid_bundle_token', 'This bundle is invalid or has expired. Build it again.');
     }
-    reply.header('cache-control', 'no-store');
-
-    // Same token twice (double click, retry): hand back the checkout already made.
     const existing = await db.checkoutSession.findUnique({ where: { id: claims.bundleId } });
-    if (existing?.checkoutUrl) {
-      if (existing.status !== 'OPEN') throw conflict('bundle_already_ordered', 'This bundle has already been ordered.');
-      return { bundleId: existing.id, checkoutUrl: existing.checkoutUrl };
+    if (existing && existing.status !== 'OPEN') {
+      throw conflict('bundle_already_ordered', 'This bundle has already been ordered.');
     }
-
     if (!config.credentialsKey) {
       throw serviceUnavailable('checkout_not_configured', 'Checkout is not configured on this server.');
     }
@@ -184,8 +204,6 @@ export async function cartRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
       engraving: claims.engraving,
     });
 
-    // Record the quote before calling the platform: a checkout that exists on
-    // the platform but not here could be paid and never matched.
     if (!existing) {
       await db.checkoutSession.create({
         data: {
@@ -207,29 +225,78 @@ export async function cartRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
       });
     }
 
-    let created;
+    const item: CheckoutLineItem = {
+      bundleId: claims.bundleId,
+      title: bundle.title,
+      sku: bundle.sku,
+      amount: claims.total,
+      currency: claims.currency,
+      imageUrl: bundle.imageUrl,
+      properties: bundle.properties,
+    };
+    let connector: PlatformConnector;
     try {
       const credentials = decryptJson<unknown>(tenant.platformCredentialsEnc, config.credentialsKey);
-      const connector = createConnector(tenant.platformType, credentials, { fetch: deps.fetch });
-      created = await connector.createCheckout({
-        bundleId: claims.bundleId,
-        title: bundle.title,
-        sku: bundle.sku,
-        amount: claims.total,
-        currency: claims.currency,
-        imageUrl: bundle.imageUrl,
-        properties: bundle.properties,
-      });
+      connector = createConnector(tenant.platformType, credentials, { fetch: deps.fetch });
     } catch (err) {
-      request.log.error({ err, tenantId: tenant.id }, 'platform checkout failed');
-      const detail = err instanceof PlatformError ? '' : ' (stored credentials could not be read)';
-      throw badGateway('platform_error', `The store's e-commerce platform did not accept the checkout${detail}.`);
+      request.log.error({ err, tenantId: tenant.id }, 'stored platform credentials are unusable');
+      throw badGateway('platform_error', "The store's e-commerce platform connection needs attention.");
     }
+    return { claims, existing, tenant, bundle, item, connector };
+  }
 
+  /** Run a platform call, turning its failure into a 502 the widget can show. */
+  async function onPlatform<T>(request: FastifyRequest, tenantId: string, call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch (err) {
+      request.log.error({ err, tenantId }, 'platform call failed');
+      throw badGateway('platform_error', "The store's e-commerce platform did not accept the request.");
+    }
+  }
+
+  app.post('/checkout', limited, async (request, reply): Promise<CheckoutResponse> => {
+    const { token } = checkoutBody.parse(request.body);
+    reply.header('cache-control', 'no-store');
+    const { claims, existing, tenant, item, connector } = await openSession(request, token);
+
+    // Same token twice (double click, retry): hand back the checkout already made.
+    if (existing?.checkoutUrl) return { bundleId: existing.id, checkoutUrl: existing.checkoutUrl };
+
+    const created = await onPlatform(request, tenant.id, () => connector.createCheckout(item));
     await db.checkoutSession.update({
       where: { id: claims.bundleId },
       data: { externalCheckoutId: created.externalCheckoutId, checkoutUrl: created.checkoutUrl },
     });
     return { bundleId: claims.bundleId, checkoutUrl: created.checkoutUrl };
+  });
+
+  app.post('/cart-item', limited, async (request, reply): Promise<CartItemResponse> => {
+    const { token } = checkoutBody.parse(request.body);
+    reply.header('cache-control', 'no-store');
+    const { claims, existing, tenant, bundle, item, connector } = await openSession(request, token);
+
+    const respond = (purchasableId: string): CartItemResponse => ({
+      bundleId: claims.bundleId,
+      platform: tenant.platformType,
+      purchasableId,
+      quantity: 1,
+      properties: { ...bundle.properties, [BUNDLE_ID_PROPERTY]: claims.bundleId },
+    });
+
+    if (existing?.checkoutUrl) {
+      throw conflict('bundle_in_checkout', 'A checkout has already been started for this bundle.');
+    }
+    if (existing?.externalCheckoutId) return respond(existing.externalCheckoutId); // retry
+    if (!connector.createCartItem) {
+      throw conflict('native_cart_unsupported', 'This platform has no native cart hand-off; use /checkout.');
+    }
+
+    const created = await onPlatform(request, tenant.id, () => connector.createCartItem!(item));
+    await db.checkoutSession.update({
+      where: { id: claims.bundleId },
+      data: { externalCheckoutId: created.purchasableId },
+    });
+    return respond(created.purchasableId);
   });
 }

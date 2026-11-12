@@ -21,8 +21,16 @@ export interface CreatedCheckout {
   externalCheckoutId: string;
 }
 
+/** A one-off product priced at the bundle total, ready for the storefront's own cart. */
+export interface CreatedCartItem {
+  /** What the storefront's add-to-cart call takes: a Shopify variant id or a WooCommerce product id. */
+  purchasableId: string;
+}
+
 export interface NormalizedOrderLine {
   externalLineItemId: string;
+  /** Shopify variant id or WooCommerce product id the line was bought as, when known. */
+  purchasableId: string | null;
   /** Unit price actually charged, as a decimal string. */
   unitPrice: string;
   quantity: number;
@@ -49,6 +57,8 @@ export type WebhookHeaders = Record<string, string | string[] | undefined>;
 export interface PlatformConnector {
   readonly platform: PlatformType;
   createCheckout(item: CheckoutLineItem): Promise<CreatedCheckout>;
+  /** Only on platforms whose native cart can be used; absent elsewhere. */
+  createCartItem?(item: CheckoutLineItem): Promise<CreatedCartItem>;
 }
 
 /** Line-item property that carries the bundle id. A leading "_" hides it from shoppers on Shopify and WooCommerce. */

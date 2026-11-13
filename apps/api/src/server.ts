@@ -13,7 +13,9 @@ import { loadConfig, type AppConfig } from './config/env';
 import { cartRoutes } from './routes/cart';
 import { diamondRoutes } from './routes/diamonds';
 import { settingRoutes } from './routes/settings';
+import { shopifyProxyRoutes } from './routes/shopifyProxy';
 import { webhookRoutes } from './routes/webhooks';
+import { widgetAssetRoutes } from './routes/widgetAsset';
 
 export interface BuildServerOptions {
   config: AppConfig;
@@ -93,6 +95,8 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     { prefix: '/api/v1' },
   );
 
+  await app.register(widgetAssetRoutes, deps);
+  await app.register(shopifyProxyRoutes, deps);
   await app.register(webhookRoutes, deps);
 
   app.addHook('onClose', async () => {

@@ -18,6 +18,7 @@ for the layout, purchase flow and store setup.
 - `apps/worker` — background jobs: Nivoda feed sync and checkout-session / cart-product cleanup.
 - `packages/shared` — `storefront.ts` is the API response contract used by the widget; the API proves
   its DTOs match it in `apps/api/src/contract.ts`. `cache.ts` is the cache shared by API and worker.
+- `integrations/wordpress/jewelry-builder` — the WooCommerce plugin (PHP, WordPress coding style, tabs).
 - `apps/dashboard` is a placeholder.
 
 ## Commands
@@ -29,6 +30,7 @@ pnpm test                                     # unit tests; API integration test
 DATABASE_URL=... pnpm --filter @jewelry/db migrate:deploy
 TEST_DATABASE_URL=... [TEST_REDIS_URL=...] pnpm test   # full suite, needs a disposable migrated Postgres
 pnpm dev:api
+php integrations/wordpress/tests/run.php     # plugin smoke test (stand-ins for WordPress, no WP needed)
 pnpm --filter @jewelry/widget test:e2e       # builds the widget and drives it in Chromium (needs Playwright's browser)
 ```
 
@@ -41,6 +43,7 @@ generate SQL with `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-da
 - An item that no markup rule prices is not for sale and must look like it does not exist.
 - The Nivoda query and the Shopify, WooCommerce and Wix connectors were written without access to the
   vendors' documentation and have not been run against live accounts.
+- The Shopify App Proxy signature check and the WordPress plugin are likewise untested on a real store.
 - A stone on a live casting order stays `ON_HOLD` locally; nothing reserves or buys it from Nivoda.
 - Test files that use the database run one at a time (`fileParallelism: false`) and truncate it first.
 

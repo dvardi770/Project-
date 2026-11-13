@@ -6,6 +6,9 @@
  *   TEST_DATABASE_URL=… [TEST_REDIS_URL=…] pnpm test
  */
 import { createHmac, randomUUID } from 'node:crypto';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient, type Prisma } from '@jewelry/db';
@@ -14,6 +17,7 @@ import { verifyBundleToken } from '../src/common/bundleToken';
 import { MemoryCache, RedisCache } from '../src/common/cache';
 import { hashApiKey } from '../src/common/tenantAuth';
 import { loadConfig } from '../src/config/env';
+import { shopifyProxySignature } from '../src/routes/shopifyProxy';
 import { buildServer } from '../src/server';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -33,6 +37,7 @@ describe.skipIf(!url)('storefront API', () => {
   /** Requests the API made to the storefront platform. */
   const platformCalls: { url: string; headers: Record<string, string>; body: any }[] = [];
   let draftSeq = 0;
+  const bundlePath = join(mkdtempSync(join(tmpdir(), 'widget-')), 'jewelry-configurator.js');
 
   const get = (path: string, headers: Record<string, string> = { 'x-api-key': PK, origin: ORIGIN }) =>
     app.inject({ method: 'GET', url: path, headers });
@@ -187,6 +192,7 @@ describe.skipIf(!url)('storefront API', () => {
       },
     });
 
+    writeFileSync(bundlePath, 'console.log("widget");');
     const redisUrl = process.env.TEST_REDIS_URL;
     const cache = redisUrl ? new RedisCache(redisUrl) : new MemoryCache();
     app = await buildServer({
@@ -201,6 +207,8 @@ describe.skipIf(!url)('storefront API', () => {
         CREDENTIALS_ENCRYPTION_KEY: ENC_KEY,
         RATE_LIMIT_PER_MINUTE: '100000',
         CHECKOUT_RATE_LIMIT_PER_MINUTE: '100000',
+        SHOPIFY_APP_SECRET: 'app-level-secret',
+        WIDGET_BUNDLE_PATH: bundlePath,
       }),
       // Stand-in for the Shopify Admin API.
       fetch: (async (url: string, init: RequestInit) => {
@@ -605,6 +613,93 @@ describe.skipIf(!url)('storefront API', () => {
       const unrelated = await webhook(order(6003, randomUUID(), '1.00'));
       expect(unrelated.json()).toMatchObject({ handled: true, castingOrders: [] });
       expect(await db.castingOrder.count()).toBe(3);
+    });
+  });
+
+  describe('Shopify App Proxy', () => {
+    const SHOP = 'example.myshopify.com';
+    /** Build a URL the way Shopify's proxy would: original params plus its own, signed. */
+    const proxied = (path: string, params: Record<string, string> = {}, opts: { secret?: string; shop?: string; age?: number } = {}) => {
+      const query: Record<string, string> = {
+        ...params,
+        shop: opts.shop ?? SHOP,
+        path_prefix: '/apps/ring-builder',
+        timestamp: String(Math.floor(Date.now() / 1000) - (opts.age ?? 0)),
+        logged_in_customer_id: '',
+      };
+      query.signature = shopifyProxySignature(query, opts.secret ?? 'app-level-secret');
+      return `/shopify/proxy${path}?${new URLSearchParams(query)}`;
+    };
+
+    it('signs the way Shopify documents: sorted key=value pairs, no separator', () => {
+      const query = { shop: 'x.myshopify.com', path_prefix: '/apps/a', timestamp: '1700000000', extra: ['1', '2'] };
+      const expected = createHmac('sha256', 's')
+        .update('extra=1,2path_prefix=/apps/ashop=x.myshopify.comtimestamp=1700000000')
+        .digest('hex');
+      expect(shopifyProxySignature({ ...query, signature: 'ignored' }, 's')).toBe(expected);
+    });
+
+    it('returns Liquid that places the widget in the theme, with no iframe and no API key', async () => {
+      const res = await app.inject({ url: proxied('') });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toMatch(/^application\/liquid/);
+      expect(res.body).toContain('<jewelry-configurator');
+      expect(res.body).toContain('api-base="/apps/ring-builder"');
+      expect(res.body).toContain('platform="shopify"');
+      expect(res.body).toMatch(/<script src="http:\/\/localhost(:80)?\/widget\/jewelry-configurator\.js" defer><\/script>/);
+      expect(res.body).toContain('{{ request.locale.iso_code | escape }}');
+      expect(res.body).not.toMatch(/iframe|api-key|pk_|sk_/);
+    });
+
+    it('accepts the app secret or the store’s own stored secret, and nothing else', async () => {
+      expect((await app.inject({ url: proxied('', {}, { secret: WEBHOOK_SECRET }) })).statusCode).toBe(200);
+      expect((await app.inject({ url: proxied('', {}, { secret: 'wrong' }) })).statusCode).toBe(401);
+      expect((await app.inject({ url: proxied('', {}, { age: 3600 }) })).statusCode).toBe(401);
+      expect((await app.inject({ url: '/shopify/proxy?shop=example.myshopify.com' })).statusCode).toBe(401);
+      expect((await app.inject({ url: proxied('', {}, { shop: 'evil.example.com' }) })).statusCode).toBe(401);
+      // a parameter changed after signing
+      expect((await app.inject({ url: proxied('').replace('ring-builder', 'other') })).statusCode).toBe(401);
+    });
+
+    it('shows a plain message for a store that is not onboarded', async () => {
+      const res = await app.inject({ url: proxied('', {}, { shop: 'stranger.myshopify.com' }) });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('not available for this store');
+      expect(res.body).not.toContain('jewelry-configurator');
+    });
+
+    it('serves the storefront API through the proxy without an API key', async () => {
+      const settings = await app.inject({ url: proxied('/api/v1/settings', { metal: 'PLATINUM_950' }) });
+      expect(settings.statusCode).toBe(200);
+      expect((settings.json().data as { name: string }[]).map((s) => s.name)).toEqual(['Classic Solitaire', 'Round Halo']);
+
+      const diamonds = await app.inject({ url: proxied('/api/v1/diamonds', { shape: 'OVAL', inventory: 'MERCHANT' }) });
+      expect(diamonds.statusCode).toBe(200);
+      expect(diamonds.json().data).toHaveLength(1);
+
+      const bundle = await app.inject({
+        method: 'POST',
+        url: proxied('/api/v1/bundle'),
+        payload: { settingVariantId: ids.ovalVariant, diamondId: stone.small, ringSize: 6 },
+      });
+      expect(bundle.statusCode).toBe(200);
+      expect(bundle.json().lineItem.price.amount).toBe('2500.00');
+
+      expect((await app.inject({ url: proxied('/api/v1/settings', {}, { secret: 'wrong' }) })).statusCode).toBe(401);
+      const stranger = await app.inject({ url: proxied('/api/v1/settings', {}, { shop: 'stranger.myshopify.com' }) });
+      expect(stranger.statusCode).toBe(403);
+      expect(stranger.json().error.code).toBe('store_not_connected');
+      // the unsigned API still requires a key
+      expect((await app.inject({ url: '/api/v1/settings' })).statusCode).toBe(401);
+    });
+
+    it('serves the widget script with caching headers', async () => {
+      const res = await app.inject({ url: '/widget/jewelry-configurator.js' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toMatch(/^text\/javascript/);
+      expect(res.body).toBe('console.log("widget");');
+      const again = await app.inject({ url: '/widget/jewelry-configurator.js', headers: { 'if-none-match': String(res.headers.etag) } });
+      expect(again.statusCode).toBe(304);
     });
   });
 

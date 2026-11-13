@@ -72,7 +72,8 @@ export class ConfiguratorApi {
         signal,
         // No cookies: the API key identifies the store, and the request stays a simple CORS call.
         credentials: 'omit',
-        headers: { 'x-api-key': this.apiKey, ...(body ? { 'content-type': 'application/json' } : {}) },
+        // No key when the API is reached through the store's own proxy, which authenticates the request itself.
+        headers: { ...(this.apiKey ? { 'x-api-key': this.apiKey } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch (err) {

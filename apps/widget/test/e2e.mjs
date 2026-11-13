@@ -53,10 +53,12 @@ const hostPage = (globals) => `<!doctype html><html lang="en"><head><meta charse
 <body><h1>Hostile Store</h1>
 <script>${globals}</script>
 <script src="/jewelry-configurator.js"></script>
-<jewelry-configurator api-base="${API}" api-key="pk_test_123" locale="en-US"></jewelry-configurator>
+<jewelry-configurator ${pageAttrs} locale="en-US"></jewelry-configurator>
 </body></html>`;
 
 let pageGlobals = '';
+const DIRECT = `api-base="${API}" api-key="pk_test_123"`;
+let pageAttrs = DIRECT;
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   const body = [];
@@ -91,9 +93,11 @@ async function mockApi(page) {
     route.fulfill({ contentType: 'image/svg+xml', body: decodeURIComponent(svg(name, name.startsWith('dia') ? '#eef3f7' : '#f1ece2').split(',')[1]) });
   });
   await page.route(/v360\.ringbuilder\.test/, (route) => route.fulfill({ contentType: 'text/html', body: '<body style="margin:0;display:grid;place-items:center;height:100vh;font:20px sans-serif">360° viewer</body>' }));
-  await page.route(`${API}/**`, async (route) => {
+  // The same API, reached directly or through a store's own proxy path.
+  const handler = async (route) => {
     const req = route.request();
     const url = new URL(req.url());
+    url.pathname = url.pathname.replace(/^\/apps\/ring-builder/, '');
     const cors = { 'access-control-allow-origin': origin, 'access-control-allow-headers': 'content-type,x-api-key', 'access-control-expose-headers': 'x-cache' };
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
     const q = Object.fromEntries(url.searchParams);
@@ -126,14 +130,17 @@ async function mockApi(page) {
     }
     if (url.pathname === '/api/v1/checkout') return json(200, { bundleId: 'b-1', checkoutUrl: `${origin}/pay` });
     return json(404, { error: { code: 'not_found', message: 'nope' } });
-  });
+  };
+  await page.route(`${API}/**`, handler);
+  await page.route('**/apps/ring-builder/api/**', handler);
 }
 
 // ── Helpers ──
 const browser = await chromium.launch();
 let passed = 0;
-async function scenario(name, { globals = '', viewport = { width: 1200, height: 900 } }, run) {
+async function scenario(name, { globals = '', attrs = DIRECT, viewport = { width: 1200, height: 900 } }, run) {
   pageGlobals = globals;
+  pageAttrs = attrs;
   api.requests = []; api.platform = 'SHOPIFY'; api.failCartItem = null; api.soldOut = false;
   const context = await browser.newContext({ viewport, deviceScaleFactor: shots ? 2 : 1 });
   const page = await context.newPage();
@@ -306,6 +313,23 @@ await scenario('WooCommerce: adds the product through wc-ajax and refreshes cart
   assert.deepEqual(triggered[0][1][0], { 'div.cart': '<div>1</div>' });
   const event = await page.evaluate(() => window.__event);
   assert.deepEqual({ platform: event.platform, cartUrl: event.cartUrl, bundleId: event.bundleId }, { platform: 'WOOCOMMERCE', cartUrl: '/cart', bundleId: 'b-1' });
+});
+
+await scenario('Shopify App Proxy mode: same-origin API path, no key', {
+  globals: 'window.Shopify = { shop: "x.myshopify.com", routes: { root: "/" } };',
+  attrs: 'api-base="/apps/ring-builder" platform="shopify"',
+}, async (page) => {
+  await buildRing(page);
+  await w(page).getByRole('button', { name: 'Add to Cart' }).click();
+  await w(page).getByRole('heading', { name: 'Added to your cart' }).waitFor();
+  assert.ok(api.requests.length >= 4);
+  assert.deepEqual([...new Set(api.requests.map((r) => r.key))], [undefined], 'no API key is sent through the proxy');
+  assert.equal(calls.cartAdd.at(-1).items[0].id, 9001);
+});
+
+await scenario('explains itself when it is not configured', { attrs: 'api-base="https://api.ringbuilder.test"' }, async (page) => {
+  await w(page).getByRole('alert').getByText(/not configured/).waitFor();
+  assert.equal(api.requests.length, 0);
 });
 
 await scenario('other sites, and a failing native cart, fall back to hosted checkout', {}, async (page) => {

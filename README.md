@@ -17,7 +17,9 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   │   │   ├── diamonds.ts     # GET  /api/v1/diamonds
 │   │   │   │   ├── settings.ts     # GET  /api/v1/settings
 │   │   │   │   ├── cart.ts         # POST /api/v1/bundle, /cart-item, /checkout
-│   │   │   │   └── webhooks.ts     # POST /webhooks/:platform/:tenantId
+│   │   │   │   ├── webhooks.ts     # POST /webhooks/:platform/:tenantId
+│   │   │   │   ├── shopifyProxy.ts # Shopify App Proxy: ring builder page + API through the proxy
+│   │   │   │   └── widgetAsset.ts  # GET  /widget/jewelry-configurator.js
 │   │   │   ├── services/           # bundle resolution, order intake
 │   │   │   └── modules/            # dashboard-side features (to come)
 │   │   └── test/                   # integration tests (real Postgres)
@@ -55,6 +57,10 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │       ├── storefront.ts       # storefront API response types (API and widget both use them)
 │   │       └── cache.ts            # Redis / in-memory cache and the inventory epoch
 │   └── config/                 # shared tsconfig / lint presets
+├── integrations/
+│   └── wordpress/
+│       ├── jewelry-builder/        # the WordPress / WooCommerce plugin (zip this folder)
+│       └── tests/run.php           # plugin smoke test against WordPress stand-ins
 ├── infra/
 │   ├── docker/
 │   └── terraform/
@@ -120,6 +126,36 @@ products are tagged `ring-builder-bundle` (Shopify) or hidden from the catalogue
 worker deletes each one an hour after its bundle is ordered, or when its checkout session expires
 (7 days).
 
+## Installing on a store
+
+Both routes need the tenant to exist and its platform credentials stored (see "Connecting a store"),
+and the widget built (`pnpm --filter @jewelry/widget build`). The API serves the built script at
+`/widget/jewelry-configurator.js`; set `WIDGET_SCRIPT_URL` if you host it on a CDN instead.
+
+### Shopify (App Proxy)
+
+1. In the Shopify app's configuration, add an App proxy: prefix `apps`, a subpath such as
+   `ring-builder`, proxy URL `https://<api-host>/shopify/proxy`.
+2. Set `SHOPIFY_APP_SECRET` on the API to the app's client secret. (A store-specific secret saved with
+   `set-credentials` as `webhookSecret` is accepted too.)
+3. The tenant's `platformStoreId` must be the store's `*.myshopify.com` domain.
+4. Link to `/apps/ring-builder` from the store's navigation.
+
+The page is returned as Liquid, so Shopify renders it inside the store's theme with no iframe. The
+widget calls the API through the same proxy path, so the merchant enters no API key and registers no
+domains: Shopify's signature identifies the store.
+
+### WordPress / WooCommerce (plugin)
+
+1. Issue a publishable key and register the site's domain:
+   `pnpm --filter @jewelry/api issue-key <tenant-slug> --domain shop.example.com`
+2. Zip `integrations/wordpress/jewelry-builder` and upload it under Plugins > Add New, then activate.
+3. Under WooCommerce > Jewelry Builder, enter the API address and the publishable key.
+4. Put `[jewelry_builder_widget]` on a page. Optional attributes: `go_to_cart="yes"`, `class="..."`.
+5. Add the order webhook under WooCommerce > Settings > Advanced > Webhooks (topic "Order updated").
+
+Plugin check without WordPress: `php integrations/wordpress/tests/run.php`.
+
 ## Background worker
 
 ```
@@ -146,7 +182,8 @@ A store then adds:
 <jewelry-configurator api-base="https://api.example.com" api-key="pk_live_..."></jewelry-configurator>
 ```
 
-The page's hostname must be one of the tenant's registered domains. Optional attributes: `platform`
+The page's hostname must be one of the tenant's registered domains. `api-base` can instead be a store's
+own proxy path (for example `/apps/ring-builder` on Shopify), in which case no key is needed. Optional attributes: `platform`
 (`shopify`, `woocommerce` or `auto`), `locale`, and `go-to-cart` to redirect to the cart after adding.
 
 "Add to Cart" uses the store's native cart on Shopify (`/cart/add.js`) and WooCommerce

@@ -40,6 +40,27 @@ export function hostnameOf(origin: string): string | null {
   }
 }
 
+/** Refuses tenants whose subscription does not entitle them to the storefront API. */
+export function assertSubscribed(tenant: { subscriptionStatus: string }): void {
+  if (tenant.subscriptionStatus !== 'ACTIVE' && tenant.subscriptionStatus !== 'TRIALING') {
+    throw forbidden('subscription_inactive', 'This account does not have an active subscription.');
+  }
+}
+
+/** What the routes need to know about the caller, however it was authenticated. */
+export function toTenantContext(
+  tenant: { id: string; defaultCurrency: string; feedConnections: { source: FeedSource }[] },
+  keyType: ApiKeyType,
+  config: AppDeps['config'],
+): TenantContext {
+  return {
+    tenantId: tenant.id,
+    keyType,
+    defaultCurrency: tenant.defaultCurrency,
+    feedSources: [...new Set([...config.platformFeeds, ...tenant.feedConnections.map((c) => c.source)])],
+  };
+}
+
 /**
  * Resolves the calling tenant from its API key on every request in scope.
  *
@@ -78,9 +99,7 @@ export function registerTenantAuth(app: FastifyInstance, deps: AppDeps): void {
       throw unauthorized('Invalid API key.');
     }
     const { tenant } = key;
-    if (tenant.subscriptionStatus !== 'ACTIVE' && tenant.subscriptionStatus !== 'TRIALING') {
-      throw forbidden('subscription_inactive', 'This account does not have an active subscription.');
-    }
+    assertSubscribed(tenant);
 
     if (key.type === 'PUBLISHABLE') {
       const origin = request.headers.origin;
@@ -93,11 +112,6 @@ export function registerTenantAuth(app: FastifyInstance, deps: AppDeps): void {
       }
     }
 
-    request.tenant = {
-      tenantId: tenant.id,
-      keyType: key.type,
-      defaultCurrency: tenant.defaultCurrency,
-      feedSources: [...new Set([...config.platformFeeds, ...tenant.feedConnections.map((c) => c.source)])],
-    };
+    request.tenant = toTenantContext(tenant, key.type, config);
   });
 }

@@ -11,8 +11,8 @@
  * from its own stylesheet.
  *
  * Attributes
- *   api-base     Origin of the storefront API (required)
- *   api-key      The store's publishable key (required)
+ *   api-base     Origin of the storefront API, or the store's proxy path such as "/apps/ring-builder" (required)
+ *   api-key      The store's publishable key (required unless api-base is a proxy path)
  *   platform     "shopify" | "woocommerce" | "auto" (default): which native cart to use
  *   locale       BCP 47 tag for number formatting (default: the page's language)
  *   go-to-cart   Present: redirect to the cart after adding instead of confirming in place
@@ -150,11 +150,20 @@ export class JewelryConfigurator extends LitElement {
   private diamondsTimer: ReturnType<typeof setTimeout> | undefined;
   private diamondsPage = 1;
 
+  /**
+   * An absolute api-base is another origin and needs the store's key. A path
+   * such as "/apps/ring-builder" is the store's own proxy, which signs requests.
+   */
+  private get configured(): boolean {
+    if (!this.apiBase) return false;
+    return this.apiBase.startsWith('/') && !this.apiBase.startsWith('//') ? true : !!this.apiKey;
+  }
+
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
   protected willUpdate(changed: PropertyValues<this>): void {
     if (changed.has('apiBase') || changed.has('apiKey')) {
-      this.api = this.apiBase && this.apiKey ? new ConfiguratorApi(this.apiBase, this.apiKey) : null;
+      this.api = this.configured ? new ConfiguratorApi(this.apiBase, this.apiKey) : null;
       if (this.api) void this.loadSettings();
     }
   }
@@ -406,9 +415,10 @@ export class JewelryConfigurator extends LitElement {
   // ─── Render ────────────────────────────────────────────────────────────────
 
   protected render(): TemplateResult {
-    if (!this.apiBase || !this.apiKey) {
+    if (!this.configured) {
       return html`<div class="root notice error" role="alert">
-        The ring builder is not configured: the <code>api-base</code> and <code>api-key</code> attributes are required.
+        The ring builder is not configured: set <code>api-base</code>, and <code>api-key</code> unless the API is reached through
+        the store's own proxy path.
       </div>`;
     }
     return html`

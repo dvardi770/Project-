@@ -21,6 +21,9 @@ const schema = z.object({
   CREDENTIALS_ENCRYPTION_KEY: z.string().optional(),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(240),
   CHECKOUT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(30),
+  SHOPIFY_APP_SECRET: z.string().min(1).optional(),
+  WIDGET_SCRIPT_URL: z.string().url().optional(),
+  WIDGET_BUNDLE_PATH: z.string().optional(),
 });
 
 export interface AppConfig {
@@ -41,6 +44,12 @@ export interface AppConfig {
   rateLimitPerMinute: number;
   /** Tighter limit for the endpoints that create bundles and checkouts. */
   checkoutRateLimitPerMinute: number;
+  /** Client secret of the Shopify app; signs App Proxy requests. Per-store secrets are also accepted. */
+  shopifyAppSecret?: string;
+  /** Public URL of the widget script (a CDN). Default: served by this API at /widget/jewelry-configurator.js. */
+  widgetScriptUrl?: string;
+  /** Where the built widget script is on disk. Default: apps/widget/dist/jewelry-configurator.js. */
+  widgetBundlePath?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -76,5 +85,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     credentialsKey,
     rateLimitPerMinute: e.RATE_LIMIT_PER_MINUTE,
     checkoutRateLimitPerMinute: e.CHECKOUT_RATE_LIMIT_PER_MINUTE,
+    shopifyAppSecret: e.SHOPIFY_APP_SECRET,
+    widgetScriptUrl: e.WIDGET_SCRIPT_URL,
+    widgetBundlePath: e.WIDGET_BUNDLE_PATH,
   };
 }

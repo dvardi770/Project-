@@ -28,6 +28,7 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │       ├── index.ts            # scheduler and `--once <job>` entry point
 │   │       └── jobs/
 │   │           ├── feedSync.ts     # Nivoda -> DiamondCache, then drops cached searches
+│   │           ├── supplierHolds.ts # optional: reserve ordered stones with Nivoda
 │   │           └── cartCleanup.ts  # expires checkout sessions, removes one-off cart products
 │   ├── dashboard/              # merchant admin web app
 │   │   └── src/{app,components,lib}/
@@ -122,7 +123,7 @@ The command prints the webhook URL to register on the store. `secrets.json` is
    Orders that arrive underpaid, or for a stone that is no longer available, are created `ON_HOLD`.
 
 For the native cart, Shopify credentials also need `write_products` and `write_publications`. One-off
-products are tagged `ring-builder-bundle` (Shopify) or hidden from the catalogue (WooCommerce). The
+products are created unlisted and tagged `ring-builder-bundle` (Shopify) or hidden from the catalogue (WooCommerce). The
 worker deletes each one an hour after its bundle is ordered, or when its checkout session expires
 (7 days).
 
@@ -161,6 +162,7 @@ Plugin check without WordPress: `php integrations/wordpress/tests/run.php`.
 ```
 pnpm --filter @jewelry/worker start                 # runs every job on its interval
 pnpm --filter @jewelry/worker job feed-sync         # or run one job once and exit
+pnpm --filter @jewelry/worker job supplier-holds
 pnpm --filter @jewelry/worker job cart-cleanup
 ```
 
@@ -169,6 +171,9 @@ See `apps/worker/.env.example`. Give it the same `REDIS_URL` and `CREDENTIALS_EN
 - **feed-sync** needs `NIVODA_USERNAME` and `NIVODA_PASSWORD` and is skipped without them. It upserts
   the feed, marks stones that left the feed unavailable (only after a complete run), keeps stones that
   are on a live order on hold whatever the feed says, and drops the API's cached searches.
+- **supplier-holds** asks Nivoda to hold the centre stone of each newly confirmed order, so it cannot be
+  sold elsewhere while the order is processed. It runs only when `NIVODA_AUTO_HOLD=true`. A hold is a
+  reservation, not a purchase; if Nivoda declines, the order is put on hold for review.
 - **cart-cleanup** marks unpaid checkout sessions past their expiry as expired and removes one-off
   cart products from stores.
 

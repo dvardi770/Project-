@@ -15,7 +15,7 @@ for the layout, purchase flow and store setup.
 - `packages/platforms` — storefront connectors and credential encryption.
 - `apps/api` — Fastify storefront API.
 - `apps/widget` — Lit web component (`<jewelry-configurator>`), built by Vite into one ASCII-only script.
-- `apps/worker` — background jobs: Nivoda feed sync and checkout-session / cart-product cleanup.
+- `apps/worker` — background jobs: Nivoda feed sync, supplier holds, checkout-session / cart-product cleanup.
 - `packages/shared` — `storefront.ts` is the API response contract used by the widget; the API proves
   its DTOs match it in `apps/api/src/contract.ts`. `cache.ts` is the cache shared by API and worker.
 - `integrations/wordpress/jewelry-builder` — the WooCommerce plugin (PHP, WordPress coding style, tabs).
@@ -41,10 +41,13 @@ generate SQL with `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-da
 
 - Wholesale price, supplier name, casting cost and CAD ids must never appear in API responses.
 - An item that no markup rule prices is not for sale and must look like it does not exist.
-- The Nivoda query and the Shopify, WooCommerce and Wix connectors were written without access to the
-  vendors' documentation and have not been run against live accounts.
-- The Shopify App Proxy signature check and the WordPress plugin are likewise untested on a real store.
-- A stone on a live casting order stays `ON_HOLD` locally; nothing reserves or buys it from Nivoda.
+- Vendor integrations were checked against primary sources, not live accounts: Nivoda's published
+  examples (bitbucket.org/nivoda/nivoda-api), the Shopify Admin GraphQL schema and `@shopify/shopify-api`,
+  Wix's SDK packages, and WooCommerce's source. None has been run against a real store or account.
+- Not established by any source: whether Nivoda's `price` is in cents (assumed; `NIVODA_PRICE_UNIT`).
+- The WordPress plugin was exercised on a real WordPress 6.4 site, but without WooCommerce installed.
+- A stone on a live casting order stays `ON_HOLD` locally. The worker can also place a Nivoda hold
+  (`NIVODA_AUTO_HOLD=true`, off by default). Nothing ever buys a stone automatically.
 - Test files that use the database run one at a time (`fileParallelism: false`) and truncate it first.
 
 ## Working agreements

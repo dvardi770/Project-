@@ -45,6 +45,8 @@ generate SQL with `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-da
   examples (bitbucket.org/nivoda/nivoda-api), the Shopify Admin GraphQL schema and `@shopify/shopify-api`,
   Wix's SDK packages, and WooCommerce's source. None has been run against a real store or account.
 - Not established by any source: whether Nivoda's `price` is in cents (assumed; `NIVODA_PRICE_UNIT`).
+  Nivoda documents cents for its price *filters* only. The feed sync refuses to write anything if the
+  cheapest stones' per-carat prices are implausible for the configured unit (`assertPlausiblePrices`).
 - The WordPress plugin was exercised on a real WordPress 6.4 site, but without WooCommerce installed.
 - A stone on a live casting order stays `ON_HOLD` locally. The worker can also place a Nivoda hold
   (`NIVODA_AUTO_HOLD=true`, off by default). Nothing ever buys a stone automatically.

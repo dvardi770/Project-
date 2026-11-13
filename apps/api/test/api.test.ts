@@ -17,7 +17,7 @@ import { verifyBundleToken } from '../src/common/bundleToken';
 import { MemoryCache, RedisCache } from '../src/common/cache';
 import { hashApiKey } from '../src/common/tenantAuth';
 import { loadConfig } from '../src/config/env';
-import { shopifyProxySignature } from '../src/routes/shopifyProxy';
+import { shopifyProxySignature, verifyShopifyProxy } from '../src/routes/shopifyProxy';
 import { buildServer } from '../src/server';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -657,6 +657,18 @@ describe.skipIf(!url)('storefront API', () => {
         shop: 'x.myshopify.com', path_prefix: '/apps/ring-builder', timestamp: '1700000000', logged_in_customer_id: '',
       };
       expect(shopifyProxySignature(params, 's3cret')).toBe(official(params, 's3cret'));
+    });
+
+    it('accepts a signature made with either sort order when the two differ', () => {
+      // "sort2" sorts before "sort" as a pair ("2" is below "=") but after it as a key.
+      const query = { sort: 'a', sort2: 'b', shop: 'x.myshopify.com', timestamp: String(Math.floor(Date.now() / 1000)) };
+      const sign = (message: string) => createHmac('sha256', 's').update(message).digest('hex');
+      const byPair = sign(`shop=x.myshopify.comsort2=bsort=atimestamp=${query.timestamp}`);
+      const byKey = sign(`shop=x.myshopify.comsort=asort2=btimestamp=${query.timestamp}`);
+      expect(byPair).not.toBe(byKey);
+      expect(verifyShopifyProxy({ ...query, signature: byPair }, ['s'])).toBe(true);
+      expect(verifyShopifyProxy({ ...query, signature: byKey }, ['s'])).toBe(true);
+      expect(verifyShopifyProxy({ ...query, signature: sign('something else') }, ['s'])).toBe(false);
     });
 
     it('returns Liquid that places the widget in the theme, with no iframe and no API key', async () => {

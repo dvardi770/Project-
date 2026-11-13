@@ -73,6 +73,8 @@ export interface NivodaConfig {
   requestTimeoutMs?: number;
   /** Stop a slice after this many pages (smoke tests). Default: no limit. */
   maxPagesPerSlice?: number;
+  /** Skip the check that prices are in a believable range for the configured priceUnit. */
+  skipPriceCheck?: boolean;
   /** Injectable for tests. Defaults to global fetch. */
   fetch?: typeof fetch;
   /** Injectable for tests. Defaults to a real timer. */
@@ -461,6 +463,43 @@ export class NivodaClient {
   }
 }
 
+// ─── Price-unit guard ────────────────────────────────────────────────────────
+
+/**
+ * Believable USD-per-carat range for the *cheapest* stones of an inventory
+ * (pages arrive cheapest first). A priceUnit that is wrong by a factor of 100
+ * lands far outside these, in either direction. The check is reliable on an
+ * unrestricted listing; a slice limited to very large stones starts at higher
+ * prices, where a cents/dollars mix-up is harder to tell apart.
+ */
+const CHEAPEST_PER_CARAT: Record<StoneOrigin, { min: number; max: number }> = {
+  NATURAL: { min: 80, max: 10_000 },
+  LAB_GROWN: { min: 5, max: 1_500 },
+};
+
+/**
+ * Throws if the first page of a slice is priced implausibly for `priceUnit`.
+ * Storing prices that are a hundred times out would misprice a merchant's
+ * whole catalogue, so the sync stops before writing anything.
+ */
+export function assertPlausiblePrices(
+  diamonds: readonly NormalizedDiamond[],
+  origin: StoneOrigin,
+  priceUnit: 'cents' | 'dollars',
+): void {
+  if (diamonds.length === 0) return;
+  const perCarat = diamonds.map((d) => d.pricePerCarat.toNumber()).sort((a, b) => a - b);
+  const median = perCarat[Math.floor(perCarat.length / 2)]!;
+  const { min, max } = CHEAPEST_PER_CARAT[origin];
+  if (median >= min && median <= max) return;
+  const other = priceUnit === 'cents' ? 'dollars' : 'cents';
+  throw new NivodaApiError(
+    `Nivoda prices do not look like ${priceUnit}: the cheapest ${origin === 'LAB_GROWN' ? 'lab-grown' : 'natural'} stones ` +
+      `work out at about $${median.toFixed(2)} per carat. Nothing was saved. ` +
+      `If your account returns prices in ${other}, set priceUnit (NIVODA_PRICE_UNIT) to "${other}".`,
+  );
+}
+
 // ─── Ingestion ───────────────────────────────────────────────────────────────
 
 export interface NivodaSyncResult {
@@ -512,6 +551,7 @@ export async function ingestNivoda(db: DiamondCacheDb, config: NivodaConfig): Pr
           }
         }
       }
+      if (page.offset === 0 && !config.skipPriceCheck) assertPlausiblePrices(diamonds, slice.origin, priceUnit);
       fetched += page.items.length;
       upserted += await upsertDiamonds(db, diamonds, syncRunId);
     }

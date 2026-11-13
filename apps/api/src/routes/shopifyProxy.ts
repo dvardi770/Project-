@@ -39,16 +39,34 @@ type Query = Record<string, string | string[] | undefined>;
 /**
  * Shopify's App Proxy signature: every query parameter except `signature`,
  * as "key=value" (repeated keys joined with ","), sorted, concatenated with
- * no separator, HMAC-SHA256 with the app secret, hex. Same algorithm as
- * @shopify/shopify-api's validateHmac(..., { signator: 'appProxy' }).
+ * no separator, HMAC-SHA256 with the app secret, hex.
+ *
+ * Shopify's documentation sorts the "key=value" strings; its own library
+ * (@shopify/shopify-api, signator 'appProxy') sorts by key. The two orders only
+ * differ when one parameter name is a prefix of another whose next character
+ * sorts below "=", which no parameter of this API does. Both are computed and
+ * either is accepted, so the check cannot fail on that difference.
  */
-export function shopifyProxySignature(query: Query, secret: string): string {
-  const message = Object.entries(query)
+function proxyMessages(query: Query): string[] {
+  const entries = Object.entries(query)
     .filter(([key, value]) => key !== 'signature' && key !== 'hmac' && value !== undefined)
-    .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(',') : value}`)
+    .map(([key, value]) => [key, `${key}=${Array.isArray(value) ? value.join(',') : value}`] as const);
+  const byPair = entries
+    .map(([, pair]) => pair)
     .sort()
     .join('');
-  return createHmac('sha256', secret).update(message).digest('hex');
+  const byKey = [...entries]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, pair]) => pair)
+    .join('');
+  return byPair === byKey ? [byPair] : [byPair, byKey];
+}
+
+const hmacHex = (message: string, secret: string) => createHmac('sha256', secret).update(message).digest('hex');
+
+/** The signature as Shopify's documentation computes it. */
+export function shopifyProxySignature(query: Query, secret: string): string {
+  return hmacHex(proxyMessages(query)[0]!, secret);
 }
 
 export function verifyShopifyProxy(query: Query, secrets: readonly string[], now = Date.now()): boolean {
@@ -57,10 +75,13 @@ export function verifyShopifyProxy(query: Query, secrets: readonly string[], now
   if (!/^[0-9a-f]{64}$/i.test(given) || !Number.isFinite(timestamp)) return false;
   if (Math.abs(now / 1000 - timestamp) > MAX_AGE_SECONDS) return false;
   const actual = Buffer.from(given.toLowerCase(), 'hex');
-  return secrets.some((secret) => {
-    const expected = Buffer.from(shopifyProxySignature(query, secret), 'hex');
-    return expected.length === actual.length && timingSafeEqual(expected, actual);
-  });
+  const messages = proxyMessages(query);
+  return secrets.some((secret) =>
+    messages.some((message) => {
+      const expected = Buffer.from(hmacHex(message, secret), 'hex');
+      return expected.length === actual.length && timingSafeEqual(expected, actual);
+    }),
+  );
 }
 
 const escapeAttribute = (value: string) =>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { NivodaClient, ingestNivoda, normalizeNivodaItem, type NivodaItem } from './nivodaIngestor';
+import { NivodaClient, assertPlausiblePrices, ingestNivoda, normalizeNivodaItem, type NivodaItem } from './nivodaIngestor';
 
 function item(n: number, overrides: Partial<NivodaItem> = {}): NivodaItem {
   return {
@@ -164,7 +164,7 @@ describe('ingestNivoda', () => {
       .fn()
       .mockResolvedValueOnce(authOk())
       .mockResolvedValueOnce(page([item(1), item(2, { price: null })], 2)) // natural
-      .mockResolvedValueOnce(page([item(3)], 1)); // lab-grown
+      .mockResolvedValueOnce(page([item(3, { price: 60000 })], 1)); // lab-grown
     const { db, upsert, updateMany } = fakeDb();
 
     const result = await ingestNivoda(db, { ...base, fetch: fetchMock });
@@ -176,6 +176,35 @@ describe('ingestNivoda', () => {
     expect(first.create.syncRunId).toBe(result.syncRunId);
     expect((upsert.mock.calls[1]?.[0] as typeof first).create.origin).toBe('LAB_GROWN');
     expect(updateMany).toHaveBeenCalledOnce();
+  });
+
+  it('refuses to save anything when prices are a hundred times off for the configured unit', async () => {
+    // the account actually returns dollars, but the default (cents) is configured
+    // (the first page holds the cheapest stones: here a $350 one)
+    const inDollars = vi.fn().mockResolvedValueOnce(authOk()).mockResolvedValueOnce(page([item(1, { price: 350 })], 1));
+    const a = fakeDb();
+    await expect(ingestNivoda(a.db, { ...base, fetch: inDollars })).rejects.toThrow(
+      /do not look like cents[\s\S]*NIVODA_PRICE_UNIT[\s\S]*"dollars"/,
+    );
+    expect(a.upsert).not.toHaveBeenCalled();
+    expect(a.updateMany).not.toHaveBeenCalled();
+
+    // the opposite mistake
+    const inCents = vi.fn().mockResolvedValueOnce(authOk()).mockResolvedValueOnce(page([item(1)], 1));
+    const b = fakeDb();
+    await expect(ingestNivoda(b.db, { ...base, priceUnit: 'dollars', fetch: inCents })).rejects.toThrow(
+      /do not look like dollars/,
+    );
+    expect(b.upsert).not.toHaveBeenCalled();
+  });
+
+  it('judges plausibility per origin, on the median', () => {
+    const at = (price: number) => normalizeNivodaItem(item(1, { price }), 'NATURAL'); // 1.01 ct
+    expect(() => assertPlausiblePrices([at(30000), at(45000), at(9000000)], 'NATURAL', 'cents')).not.toThrow(); // one outlier
+    expect(() => assertPlausiblePrices([at(8000), at(12000)], 'LAB_GROWN', 'cents')).not.toThrow(); // about $80 to $120 per carat
+    expect(() => assertPlausiblePrices([at(300), at(450)], 'NATURAL', 'cents')).toThrow(); // a few dollars per carat
+    expect(() => assertPlausiblePrices([at(800000)], 'LAB_GROWN', 'cents')).toThrow(); // $8,000 per carat for the cheapest lab stone
+    expect(() => assertPlausiblePrices([], 'NATURAL', 'cents')).not.toThrow();
   });
 
   it('never flags stones after a failed or partial run', async () => {

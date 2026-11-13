@@ -7,8 +7,8 @@
  * Everything renders inside a shadow root: the host store's CSS cannot reach
  * in, and these styles cannot leak out. Inherited properties (font, colour,
  * line height) do cross a shadow boundary, so the root wrapper resets them. Theming is
- * done on purpose through the --jc-* custom properties, which a store can set
- * from its own stylesheet.
+ * done on purpose through the --jc-* custom properties listed in styles.ts,
+ * which a store can set from its own stylesheet.
  *
  * Attributes
  *   api-base     Origin of the storefront API, or the store's proxy path such as "/apps/ring-builder" (required)
@@ -22,10 +22,12 @@
  *   jc-checkout       { bundleId, checkoutUrl }   fired just before redirecting
  *   jc-error          { code, message }
  */
-import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ApiError, ConfiguratorApi, type Diamond, type Money, type Setting, type SettingVariant } from './api';
 import { addToShopifyCart, addToWooCommerceCart, detectPlatform, type StorefrontPlatform } from './cart';
+import { illustrationDefs, ringIllustration, stoneIcon } from './illustrations';
+import { styles } from './styles';
 
 // ─── Vocabulary ──────────────────────────────────────────────────────────────
 
@@ -90,6 +92,9 @@ const safeUrl = (url: string | null | undefined): string | null => {
 };
 
 const isVideoFile = (url: string) => /\.(mp4|webm|mov)(\?|#|$)/i.test(url);
+
+/** The cut to draw in a setting's illustration before a diamond is chosen. */
+const previewShape = (s: Setting) => (s.compatibleShapes.includes('ROUND') ? 'ROUND' : (s.compatibleShapes[0] ?? 'ROUND'));
 
 type Step = 1 | 2 | 3;
 type CartState =
@@ -423,7 +428,7 @@ export class JewelryConfigurator extends LitElement {
     }
     return html`
       <div class="root jc">
-        ${this.renderStepper()}
+        ${illustrationDefs()} ${this.renderStepper()}
         <div class="body">
           ${this.step === 1 ? this.renderSettings() : this.step === 2 ? this.renderDiamonds() : this.renderSummary()}
         </div>
@@ -466,7 +471,11 @@ export class JewelryConfigurator extends LitElement {
 
   private renderSettings(): TemplateResult {
     return html`
-      <h2 tabindex="-1">Choose your setting</h2>
+      <header class="step-head">
+        <span class="eyebrow">Step 1 of 3</span>
+        <h2 tabindex="-1">Choose your setting</h2>
+        <p class="lede">Every setting is made to order in the metal you choose.</p>
+      </header>
       <div class="filters-row">
         <label class="field">
           <span>Metal</span>
@@ -518,13 +527,22 @@ export class JewelryConfigurator extends LitElement {
 
   private renderSettingCard(s: Setting): TemplateResult {
     const selected = this.setting?.id === s.id;
-    const shown = selected && this.variant ? this.variant : s.variants[0];
+    // Draw unselected cards in the metal being browsed, so the grid reads as one collection.
+    const shown =
+      selected && this.variant ? this.variant : (s.variants.find((v) => v.metal === this.metalFilter) ?? s.variants.find((v) => v.metal.startsWith('WHITE')) ?? s.variants[0]);
     const image = safeUrl(shown?.imageUrls[0]) ?? safeUrl(s.thumbnailUrl);
     return html`
       <article class="card ${selected ? 'selected' : ''}">
         <button type="button" class="card-main" aria-pressed=${selected} @click=${() => this.pickSetting(s, this.variant?.metal)}>
           <span class="thumb">
-            ${image ? html`<img src=${image} alt="" loading="lazy" />` : html`<span class="ph" aria-hidden="true">◇</span>`}
+            ${image
+              ? html`<img src=${image} alt="" loading="lazy" />`
+              : ringIllustration({
+                  style: s.style,
+                  metal: shown?.metal ?? 'WHITE_GOLD_14K',
+                  shape: selected && this.diamond ? this.diamond.shape : previewShape(s),
+                  carat: selected && this.diamond ? this.diamond.carat : 1,
+                })}
           </span>
           <span class="card-name">${s.name}</span>
           <span class="card-meta">${titleCase(s.style)}</span>
@@ -565,7 +583,14 @@ export class JewelryConfigurator extends LitElement {
     const count = this.diamondsCapped ? `${this.diamondsTotal.toLocaleString()}+` : this.diamondsTotal.toLocaleString();
 
     return html`
-      <h2 tabindex="-1">Choose your diamond</h2>
+      <header class="step-head">
+        <span class="eyebrow">Step 2 of 3</span>
+        <h2 tabindex="-1">Choose your diamond</h2>
+        <p class="lede">
+          For your <b>${s.name}</b> in ${metalLabel(this.variant!.metal)}.
+          <button type="button" class="link" @click=${() => this.go(1)}>Change setting</button>
+        </p>
+      </header>
       <div class="split">
         <details
           class="filters"
@@ -581,14 +606,14 @@ export class JewelryConfigurator extends LitElement {
                   (shape) => html`
                     <button
                       type="button"
-                      class="chip"
+                      class="chip shape"
                       aria-pressed=${this.shapes.includes(shape)}
                       @click=${() => {
                         this.shapes = this.shapes.includes(shape) ? this.shapes.filter((x) => x !== shape) : [...this.shapes, shape];
                         this.queueDiamondSearch();
                       }}
                     >
-                      ${titleCase(shape)}
+                      ${stoneIcon(shape)}<span>${titleCase(shape)}</span>
                     </button>
                   `,
                 )}
@@ -739,21 +764,23 @@ export class JewelryConfigurator extends LitElement {
   private renderDiamondRow(d: Diamond): TemplateResult {
     const selected = this.diamond?.id === d.id;
     const image = safeUrl(d.imageUrl);
-    const grades = [d.color && `${d.color} colour`, d.clarity, d.cut && `${titleCase(d.cut)} cut`].filter(Boolean);
+    const pills = [d.color, d.clarity, d.cut ? titleCase(d.cut) : null].filter(Boolean) as string[];
     return html`
       <li class="stone ${selected ? 'selected' : ''}">
-        <span class="thumb small">
-          ${image ? html`<img src=${image} alt="" loading="lazy" />` : html`<span class="ph" aria-hidden="true">◇</span>`}
-        </span>
+        <span class="thumb small">${image ? html`<img src=${image} alt="" loading="lazy" />` : stoneIcon(d.shape)}</span>
         <span class="stone-info">
           <b>${this.diamondTitle(d)}</b>
-          <small>${grades.join(' · ')}</small>
+          <span class="pills">
+            ${pills.map((p) => html`<span class="pill">${p}</span>`)}
+            ${d.origin === 'LAB_GROWN' ? html`<span class="pill tone">Lab-grown</span>` : nothing}
+            ${d.inventory === 'MERCHANT' ? html`<span class="pill tone">In our showroom</span>` : nothing}
+          </span>
           <small class="muted">
-            ${d.lab !== 'NONE' ? `${d.lab} certified` : 'Uncertified'}${d.inventory === 'MERCHANT' ? ' · In our showroom' : ''}
+            ${d.lab !== 'NONE' ? `${d.lab} certified` : 'Uncertified'}${d.deliveryDays ? ` · Ships in ${d.deliveryDays} days` : ''}
           </small>
         </span>
         <span class="stone-price">${this.money(d.price)}</span>
-        <button type="button" class="btn ${selected ? '' : 'ghost'} small" aria-pressed=${selected} @click=${() => this.pickDiamond(d)}>
+        <button type="button" class="btn ${selected ? 'chosen' : 'ghost'} small" aria-pressed=${selected} @click=${() => this.pickDiamond(d)}>
           ${selected ? 'Selected' : 'Select'}<span class="sr"> ${this.diamondTitle(d)}, ${this.money(d.price)}</span>
         </button>
       </li>
@@ -779,7 +806,10 @@ export class JewelryConfigurator extends LitElement {
     if (this.cart.phase === 'added') {
       return html`
         <div class="added" role="status">
-          <span class="tick" aria-hidden="true">✓</span>
+          <span class="added-ill">
+            ${render ? html`<img src=${render} alt="" />` : ringIllustration({ style: s.style, metal: v.metal, shape: d.shape, carat: d.carat })}
+            <span class="tick" aria-hidden="true">✓</span>
+          </span>
           <h2 tabindex="-1">Added to your cart</h2>
           <p>${this.cart.title}</p>
           <div class="actions">
@@ -791,7 +821,10 @@ export class JewelryConfigurator extends LitElement {
     }
 
     return html`
-      <h2 tabindex="-1">Review your ring</h2>
+      <header class="step-head">
+        <span class="eyebrow">Step 3 of 3</span>
+        <h2 tabindex="-1">Review your ring</h2>
+      </header>
       <div class="review">
         <div class="gallery">
           <div class="hero">
@@ -801,8 +834,15 @@ export class JewelryConfigurator extends LitElement {
                 : html`<iframe src=${spin} title="360° view of ${s.name}" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>`
               : render
                 ? html`<img src=${render} alt="${s.name} in ${metalLabel(v.metal)}" />`
-                : html`<span class="ph" aria-hidden="true">◇</span>`}
+                : ringIllustration({
+                    style: s.style,
+                    metal: v.metal,
+                    shape: d.shape,
+                    carat: d.carat,
+                    label: `Illustration of the ${s.name} in ${metalLabel(v.metal)} with a ${this.diamondTitle(d)} diamond`,
+                  })}
           </div>
+          ${render || (this.show360 && spin) ? nothing : html`<p class="caption">Illustration. Your ring is made to order.</p>`}
           <div class="gallery-row">
             ${spin
               ? html`<button type="button" class="btn ghost small" aria-pressed=${this.show360} @click=${() => (this.show360 = !this.show360)}>
@@ -907,750 +947,7 @@ export class JewelryConfigurator extends LitElement {
     `;
   }
 
-  // ─── Styles ────────────────────────────────────────────────────────────────
-
-  static styles = css`
-    :host {
-      display: block;
-      container-type: inline-size;
-    }
-    /*
-     * The reset lives on an element inside the shadow root, not on :host. A
-     * store rule such as "* { font-family: x !important }" does match the host
-     * element and would win there, and its value would then inherit inward.
-     * Nothing outside can match .root, so inheritance stops here.
-     */
-    .root {
-      all: initial;
-      display: block;
-      font-family: var(--jc-font, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
-      font-size: 16px;
-      line-height: 1.45;
-      color: var(--jc-text, #1c1b1a);
-      -webkit-text-size-adjust: 100%;
-
-      --_bg: var(--jc-bg, #ffffff);
-      --_surface: var(--jc-surface, #faf9f7);
-      --_border: var(--jc-border, #e3e0da);
-      --_muted: var(--jc-muted, #6b6862);
-      --_accent: var(--jc-accent, #1c1b1a);
-      --_on-accent: var(--jc-on-accent, #ffffff);
-      --_radius: var(--jc-radius, 10px);
-      --_danger: #a4262c;
-    }
-    :host([hidden]) {
-      display: none;
-    }
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-    }
-    .jc {
-      background: var(--_bg);
-      border: 1px solid var(--_border);
-      border-radius: calc(var(--_radius) + 4px);
-      overflow: clip;
-    }
-    .body {
-      padding: 20px;
-    }
-    h2 {
-      margin: 0 0 16px;
-      font-size: 1.35rem;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-      outline: none;
-    }
-    small {
-      font-size: 0.8125rem;
-    }
-    .muted,
-    small.muted {
-      color: var(--_muted);
-    }
-    .sr {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-    button,
-    select,
-    input {
-      font: inherit;
-      color: inherit;
-    }
-    button {
-      cursor: pointer;
-    }
-    button:disabled {
-      cursor: not-allowed;
-    }
-    :focus-visible {
-      outline: 2px solid var(--_accent);
-      outline-offset: 2px;
-    }
-
-    /* Stepper */
-    .steps {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      border-bottom: 1px solid var(--_border);
-      background: var(--_surface);
-    }
-    .steps button {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      width: 100%;
-      padding: 14px 16px;
-      background: none;
-      border: 0;
-      border-bottom: 2px solid transparent;
-      text-align: left;
-      color: var(--_muted);
-    }
-    .steps button.current {
-      color: inherit;
-      border-bottom-color: var(--_accent);
-      background: var(--_bg);
-    }
-    .steps button.done {
-      color: inherit;
-    }
-    .steps button:disabled {
-      opacity: 0.55;
-    }
-    .num {
-      flex: none;
-      display: grid;
-      place-items: center;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      border: 1px solid currentColor;
-      font-size: 0.8125rem;
-      font-weight: 600;
-    }
-    .current .num,
-    .done .num {
-      background: var(--_accent);
-      border-color: var(--_accent);
-      color: var(--_on-accent);
-    }
-    .txt {
-      display: grid;
-      min-width: 0;
-    }
-    .txt small {
-      color: var(--_muted);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    /* Controls */
-    .field {
-      display: grid;
-      gap: 4px;
-      font-size: 0.875rem;
-    }
-    .field > span {
-      font-weight: 600;
-    }
-    .field em {
-      font-weight: 400;
-      font-style: normal;
-      color: var(--_muted);
-    }
-    .field.grow {
-      flex: 1 1 200px;
-    }
-    select,
-    input[type='text'] {
-      min-height: 42px;
-      padding: 8px 12px;
-      background: var(--_bg);
-      border: 1px solid var(--_border);
-      border-radius: var(--_radius);
-      width: 100%;
-    }
-    .chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .chip {
-      padding: 7px 14px;
-      min-height: 36px;
-      background: var(--_bg);
-      border: 1px solid var(--_border);
-      border-radius: 999px;
-      font-size: 0.875rem;
-    }
-    .chip[aria-pressed='true'] {
-      background: var(--_accent);
-      border-color: var(--_accent);
-      color: var(--_on-accent);
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      min-height: 44px;
-      padding: 10px 20px;
-      background: var(--_accent);
-      border: 1px solid var(--_accent);
-      border-radius: var(--_radius);
-      color: var(--_on-accent);
-      font-weight: 600;
-      text-decoration: none;
-      white-space: nowrap;
-    }
-    .btn.ghost {
-      background: transparent;
-      color: inherit;
-      border-color: var(--_border);
-    }
-    .btn.small {
-      min-height: 36px;
-      padding: 6px 14px;
-      font-size: 0.875rem;
-    }
-    .btn:disabled {
-      opacity: 0.45;
-    }
-    .link {
-      padding: 0;
-      background: none;
-      border: 0;
-      color: inherit;
-      font-size: 0.8125rem;
-      text-decoration: underline;
-      text-underline-offset: 2px;
-    }
-    .notice {
-      margin: 12px 0;
-      padding: 12px 14px;
-      border-radius: var(--_radius);
-      font-size: 0.875rem;
-    }
-    .notice.error {
-      background: #fdf3f3;
-      border: 1px solid #f0c7c9;
-      color: var(--_danger);
-    }
-    .empty {
-      padding: 32px 0;
-      text-align: center;
-      color: var(--_muted);
-    }
-
-    /* Step 1 */
-    .filters-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: end;
-      gap: 16px;
-      margin-bottom: 20px;
-    }
-    .filters-row .field {
-      flex: 0 0 200px;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-      gap: 16px;
-    }
-    .card {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      align-self: start;
-      border: 1px solid var(--_border);
-      border-radius: var(--_radius);
-      background: var(--_bg);
-      overflow: hidden;
-    }
-    .card.selected {
-      border-color: var(--_accent);
-      box-shadow: 0 0 0 1px var(--_accent);
-    }
-    .card.skeleton {
-      min-height: 260px;
-      background: linear-gradient(100deg, var(--_surface) 40%, #f0eee9 50%, var(--_surface) 60%) 0 0 / 200% 100%;
-      animation: shimmer 1.4s linear infinite;
-    }
-    @keyframes shimmer {
-      to {
-        background-position: -200% 0;
-      }
-    }
-    .card-main {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 2px;
-      padding: 0 0 12px;
-      background: none;
-      border: 0;
-      text-align: left;
-    }
-    .card-main > :not(.thumb) {
-      padding: 0 12px;
-    }
-    .thumb {
-      display: grid;
-      place-items: center;
-      aspect-ratio: 1;
-      margin-bottom: 10px;
-      background: var(--_surface);
-      overflow: hidden;
-    }
-    .thumb.small {
-      flex: none;
-      width: 64px;
-      margin: 0;
-      border-radius: 8px;
-    }
-    .thumb img,
-    .hero img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-    .ph {
-      font-size: 2rem;
-      color: #c9c5bc;
-    }
-    .card-name {
-      font-weight: 600;
-      overflow-wrap: anywhere;
-    }
-    .card-meta {
-      font-size: 0.8125rem;
-      color: var(--_muted);
-    }
-    .card-price {
-      margin-top: 4px;
-      font-size: 0.9375rem;
-    }
-    .swatches {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-      padding: 10px 12px 12px;
-      border-top: 1px solid var(--_border);
-    }
-    .swatch {
-      width: 30px;
-      height: 30px;
-      padding: 3px;
-      background: none;
-      border: 1px solid transparent;
-      border-radius: 50%;
-    }
-    .swatch i {
-      display: block;
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      border: 1px solid rgb(0 0 0 / 0.15);
-    }
-    .swatch[aria-pressed='true'] {
-      border-color: var(--_accent);
-    }
-    .swatch-label {
-      flex-basis: 100%;
-      font-size: 0.8125rem;
-      color: var(--_muted);
-    }
-
-    /* Step 2 */
-    .split {
-      display: grid;
-      grid-template-columns: 260px minmax(0, 1fr);
-      gap: 24px;
-      align-items: start;
-    }
-    .filters > summary {
-      display: none;
-      padding: 10px 14px;
-      border: 1px solid var(--_border);
-      border-radius: var(--_radius);
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .filters-inner {
-      display: grid;
-      gap: 20px;
-    }
-    fieldset {
-      min-width: 0;
-      margin: 0;
-      padding: 0;
-      border: 0;
-    }
-    legend {
-      padding: 0;
-      margin-bottom: 8px;
-      font-size: 0.875rem;
-      font-weight: 600;
-    }
-    .range-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 8px;
-      margin-bottom: 6px;
-      font-size: 0.875rem;
-      font-weight: 600;
-    }
-    .range-head output {
-      font-size: 0.8125rem;
-      font-weight: 400;
-      color: var(--_muted);
-    }
-    .track {
-      position: relative;
-      height: 28px;
-    }
-    .track::before,
-    .track::after {
-      content: '';
-      position: absolute;
-      top: 12px;
-      height: 4px;
-      border-radius: 2px;
-    }
-    .track::before {
-      left: 0;
-      right: 0;
-      background: var(--_border);
-    }
-    .track::after {
-      left: var(--lo);
-      right: calc(100% - var(--hi));
-      background: var(--_accent);
-    }
-    /* Two native sliders stacked: only the thumbs take pointer events. */
-    .track input {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 28px;
-      margin: 0;
-      padding: 0;
-      background: none;
-      border: 0;
-      pointer-events: none;
-      -webkit-appearance: none;
-      appearance: none;
-      z-index: 1;
-    }
-    .track input::-webkit-slider-runnable-track {
-      background: none;
-    }
-    .track input::-moz-range-track {
-      background: none;
-    }
-    .track input::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 24px;
-      height: 24px;
-      margin-top: 2px;
-      border-radius: 50%;
-      background: var(--_bg);
-      border: 2px solid var(--_accent);
-      pointer-events: auto;
-      cursor: grab;
-    }
-    .track input::-moz-range-thumb {
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: var(--_bg);
-      border: 2px solid var(--_accent);
-      pointer-events: auto;
-      cursor: grab;
-    }
-    .results-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-      font-size: 0.875rem;
-      color: var(--_muted);
-    }
-    .field.inline select {
-      min-height: 36px;
-      padding: 4px 10px;
-      color: var(--jc-text, #1c1b1a);
-    }
-    .stones {
-      display: grid;
-      gap: 8px;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      transition: opacity 0.15s;
-    }
-    .stones.loading {
-      opacity: 0.55;
-    }
-    .stone {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto auto;
-      align-items: center;
-      gap: 14px;
-      padding: 10px;
-      border: 1px solid var(--_border);
-      border-radius: var(--_radius);
-    }
-    .stone.selected {
-      border-color: var(--_accent);
-      box-shadow: 0 0 0 1px var(--_accent);
-    }
-    .stone-info {
-      display: grid;
-      min-width: 0;
-    }
-    .stone-price {
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    .more {
-      width: 100%;
-      margin-top: 12px;
-    }
-
-    /* Step 3 */
-    .review {
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-      gap: 28px;
-      align-items: start;
-    }
-    .hero {
-      display: grid;
-      place-items: center;
-      aspect-ratio: 1;
-      background: var(--_surface);
-      border-radius: var(--_radius);
-      overflow: hidden;
-    }
-    .hero iframe,
-    .hero video {
-      width: 100%;
-      height: 100%;
-      border: 0;
-      display: block;
-    }
-    .hero .ph {
-      font-size: 5rem;
-    }
-    .gallery-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 12px;
-      margin-top: 12px;
-    }
-    .lines {
-      margin: 0;
-    }
-    .lines > div {
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 14px 0;
-      border-bottom: 1px solid var(--_border);
-    }
-    .lines dt {
-      display: grid;
-      gap: 2px;
-      justify-items: start;
-    }
-    .lines dt small {
-      color: var(--_muted);
-    }
-    .lines dd {
-      margin: 0;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    .lines .total {
-      border-bottom: 0;
-      font-size: 1.25rem;
-      font-weight: 600;
-    }
-    .options {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin: 8px 0 12px;
-    }
-    .options .field:first-child {
-      flex: 0 0 110px;
-    }
-    .added {
-      display: grid;
-      justify-items: center;
-      gap: 8px;
-      padding: 40px 16px;
-      text-align: center;
-    }
-    .added h2 {
-      margin: 0;
-    }
-    .added p {
-      margin: 0;
-      color: var(--_muted);
-    }
-    .tick {
-      display: grid;
-      place-items: center;
-      width: 56px;
-      height: 56px;
-      border-radius: 50%;
-      background: var(--_accent);
-      color: var(--_on-accent);
-      font-size: 1.5rem;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 12px;
-      margin-top: 16px;
-    }
-
-    /* Footer bar */
-    .bar {
-      position: sticky;
-      bottom: 0;
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 16px;
-      padding: 12px 20px;
-      background: var(--_bg);
-      border-top: 1px solid var(--_border);
-    }
-    .bar-summary {
-      display: grid;
-      justify-items: end;
-      min-width: 0;
-      text-align: right;
-    }
-    .bar-summary small {
-      color: var(--_muted);
-    }
-    .bar-summary > * {
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .big {
-      font-size: 1.25rem;
-    }
-    .spinner {
-      width: 16px;
-      height: 16px;
-      border: 2px solid currentColor;
-      border-right-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    /* The widget's own width, not the viewport's, decides the layout. */
-    @container (max-width: 760px) {
-      .split,
-      .review {
-        grid-template-columns: minmax(0, 1fr);
-      }
-      .filters > summary {
-        display: block;
-        margin-bottom: 12px;
-      }
-      .filters:not([open]) > summary {
-        margin-bottom: 0;
-      }
-    }
-    @container (max-width: 560px) {
-      .body {
-        padding: 14px;
-      }
-      .steps button {
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-        padding: 10px 6px;
-        text-align: center;
-      }
-      .txt small {
-        display: none;
-      }
-      .grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-      .filters-row .field {
-        flex: 1 1 100%;
-      }
-      .stone {
-        grid-template-columns: auto minmax(0, 1fr) auto;
-      }
-      .stone .btn {
-        grid-column: 1 / -1;
-      }
-      .bar {
-        grid-template-columns: auto minmax(0, 1fr);
-        gap: 8px 10px;
-        padding: 10px 14px;
-      }
-      /* One line of summary above a single row of buttons. */
-      .bar-summary {
-        grid-column: 1 / -1;
-        grid-row: 1;
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        gap: 10px;
-        text-align: left;
-      }
-      .bar > span:first-child {
-        display: none;
-      }
-      .bar .btn.primary {
-        grid-column: 2;
-      }
-      .bar > span:first-child + .bar-summary + .btn.primary {
-        grid-column: 1 / -1;
-      }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      * {
-        animation: none !important;
-        transition: none !important;
-      }
-    }
-  `;
+  static styles = styles;
 }
 
 declare global {

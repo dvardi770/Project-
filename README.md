@@ -241,8 +241,12 @@ own proxy path (for example `/apps/ring-builder` on Shopify), in which case no k
 (`?wc-ajax=add_to_cart`), and falls back to a hosted checkout everywhere else or if the native call fails.
 
 The widget renders in a shadow root, so store CSS cannot restyle it. Stores theme it with CSS custom
-properties: `--jc-accent`, `--jc-on-accent`, `--jc-bg`, `--jc-surface`, `--jc-text`, `--jc-muted`,
-`--jc-border`, `--jc-radius`, `--jc-font`.
+properties: `--jc-accent`, `--jc-on-accent`, `--jc-highlight` (selected items and fine detail),
+`--jc-bg`, `--jc-surface`, `--jc-text`, `--jc-muted`, `--jc-border`, `--jc-radius`, `--jc-font`, and
+`--jc-font-display` for headings and prices (a store's own web font works here).
+
+Where a setting or diamond has no photo, the widget draws one: the diamond's cut, and the ring in the
+chosen metal with the chosen stone set in it. Real photos always take precedence.
 
 It fires `jc-added-to-cart`, `jc-checkout` and `jc-error` on the element, and
 `jewelry-configurator:cart-updated` on `document` so a theme can refresh its cart drawer.

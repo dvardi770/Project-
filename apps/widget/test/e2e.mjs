@@ -189,14 +189,14 @@ await scenario('survives hostile host CSS and never runs catalogue data as marku
       border: cs('.grid').borderTopWidth,
     };
   });
-  assert.equal(styles.h2Size, '21.6px');
+  assert.equal(styles.h2Size, '32px'); // 2rem of the widget's own 16px, not the store's 30px
   assert.equal(styles.h2Margin, '0px');
   assert.doesNotMatch(styles.font, /Comic/);
   assert.equal(styles.color, 'rgb(28, 27, 26)');
   assert.equal(styles.transform, 'none');
   assert.equal(styles.spacing, 'normal');
   assert.notEqual(styles.align, 'center');
-  assert.equal(styles.lineHeight, '23.2px');
+  assert.equal(styles.lineHeight, '24.84px'); // 1.35rem × 1.15, not the store's line-height: 3
   assert.notEqual(styles.buttonDisplay, 'none');
   assert.notEqual(styles.selectDisplay, 'none');
   assert.equal(styles.gridFloat, 'none');

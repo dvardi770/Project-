@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ring builder — local demo</title>
+    <style>
+      body { margin: 0; padding: 24px; font-family: Georgia, serif; background: #f3f1ec; }
+      main { max-width: 1100px; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Store page</h1>
+      <!-- Local demo: pnpm --filter @jewelry/widget dev, then open
+           /?api=http://localhost:4000&key=pk_…  (add the page's origin to CORS_DEV_ORIGINS) -->
+      <jewelry-configurator></jewelry-configurator>
+    </main>
+    <script type="module">
+      import './src/jewelry-configurator.ts';
+      const q = new URLSearchParams(location.search);
+      const el = document.querySelector('jewelry-configurator');
+      el.setAttribute('api-base', q.get('api') ?? 'http://localhost:4000');
+      el.setAttribute('api-key', q.get('key') ?? '');
+    </script>
+  </body>
+</html>

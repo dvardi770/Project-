@@ -13,7 +13,10 @@ for the layout, purchase flow and store setup.
   `apps/api/src/routes/diamonds.ts` mirrors it only for filtering and sorting.
 - `packages/feeds` — Nivoda ingestor, RapNet adapter, shared grading normaliser.
 - `packages/platforms` — storefront connectors and credential encryption.
-- `apps/api` — Fastify storefront API. `apps/worker`, `apps/dashboard`, `apps/widget` are placeholders.
+- `apps/api` — Fastify storefront API.
+- `apps/widget` — Lit web component (`<jewelry-configurator>`), built by Vite into one ASCII-only script.
+  Its API types in `src/api.ts` are hand-written copies of the API's response shapes; change both together.
+- `apps/worker`, `apps/dashboard` are placeholders.
 
 ## Commands
 
@@ -24,6 +27,7 @@ pnpm test                                     # unit tests; API integration test
 DATABASE_URL=... pnpm --filter @jewelry/db migrate:deploy
 TEST_DATABASE_URL=... [TEST_REDIS_URL=...] pnpm test   # full suite, needs a disposable migrated Postgres
 pnpm dev:api
+pnpm --filter @jewelry/widget test:e2e       # builds the widget and drives it in Chromium (needs Playwright's browser)
 ```
 
 New migrations: `prisma migrate dev` needs an interactive terminal; in a non-interactive session

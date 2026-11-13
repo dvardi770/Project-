@@ -1,0 +1,19 @@
+{
+  "name": "@jewelry/widget",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:e2e": "vite build && node test/e2e.mjs"
+  },
+  "dependencies": {
+    "lit": "^3.2.0"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0",
+    "vite": "^8.0.0"
+  }
+}

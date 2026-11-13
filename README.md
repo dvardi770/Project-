@@ -16,7 +16,7 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   │   ├── routes/
 │   │   │   │   ├── diamonds.ts     # GET  /api/v1/diamonds
 │   │   │   │   ├── settings.ts     # GET  /api/v1/settings
-│   │   │   │   ├── cart.ts         # POST /api/v1/bundle, POST /api/v1/checkout
+│   │   │   │   ├── cart.ts         # POST /api/v1/bundle, /cart-item, /checkout
 │   │   │   │   └── webhooks.ts     # POST /webhooks/:platform/:tenantId
 │   │   │   ├── services/           # bundle resolution, order intake
 │   │   │   └── modules/            # dashboard-side features (to come)
@@ -29,8 +29,12 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │       └── casting-dispatch/   # send job tickets to casting vendors
 │   ├── dashboard/              # merchant admin web app
 │   │   └── src/{app,components,lib}/
-│   └── widget/                 # embeddable ring builder (script + iframe)
-│       └── src/{steps,components,state,embed}/
+│   └── widget/                 # embeddable ring builder (Lit web component)
+│       ├── src/
+│       │   ├── jewelry-configurator.ts   # <jewelry-configurator>: 3-step wizard in a shadow root
+│       │   ├── api.ts                    # typed storefront API client
+│       │   └── cart.ts                   # platform detection + native cart push
+│       └── test/e2e.mjs                  # browser test on a hostile host page
 ├── packages/
 │   ├── db/                     # Prisma schema, migrations, generated client
 │   │   ├── prisma/
@@ -100,11 +104,44 @@ The command prints the webhook URL to register on the store. `secrets.json` is
 ## Purchase flow
 
 1. `POST /api/v1/bundle` validates and prices a setting + stone and returns a signed quote token.
-2. `POST /api/v1/checkout` takes the token, records a checkout session and creates the order on the
-   store's platform at the quoted price, returning the URL where the shopper pays.
+2. The quote is handed to the store in one of two ways, both recorded as a checkout session:
+   - `POST /api/v1/cart-item` (Shopify, WooCommerce) creates a one-off product at the quoted price and
+     returns its id; the widget adds it with the store's own cart call.
+   - `POST /api/v1/checkout` (any platform) creates the order on the platform and returns the URL where
+     the shopper pays.
 3. The platform calls `POST /webhooks/:platform/:tenantId` when the order is paid. The order is matched
    to its checkout session and becomes a casting order (job bag); the stone is taken out of stock.
    Orders that arrive underpaid, or for a stone that is no longer available, are created `ON_HOLD`.
+
+For the native cart, Shopify credentials also need `write_products` and `write_publications`. One-off
+products are tagged `ring-builder-bundle` (Shopify) or hidden from the catalogue (WooCommerce); nothing
+deletes them yet.
+
+## Embedding the ring builder
+
+Build once (`pnpm --filter @jewelry/widget build`) and host `apps/widget/dist/jewelry-configurator.js`.
+A store then adds:
+
+```html
+<script src="https://cdn.example.com/jewelry-configurator.js" defer></script>
+<jewelry-configurator api-base="https://api.example.com" api-key="pk_live_..."></jewelry-configurator>
+```
+
+The page's hostname must be one of the tenant's registered domains. Optional attributes: `platform`
+(`shopify`, `woocommerce` or `auto`), `locale`, and `go-to-cart` to redirect to the cart after adding.
+
+"Add to Cart" uses the store's native cart on Shopify (`/cart/add.js`) and WooCommerce
+(`?wc-ajax=add_to_cart`), and falls back to a hosted checkout everywhere else or if the native call fails.
+
+The widget renders in a shadow root, so store CSS cannot restyle it. Stores theme it with CSS custom
+properties: `--jc-accent`, `--jc-on-accent`, `--jc-bg`, `--jc-surface`, `--jc-text`, `--jc-muted`,
+`--jc-border`, `--jc-radius`, `--jc-font`.
+
+It fires `jc-added-to-cart`, `jc-checkout` and `jc-error` on the element, and
+`jewelry-configurator:cart-updated` on `document` so a theme can refresh its cart drawer.
+
+Local demo: `pnpm --filter @jewelry/widget dev`, then open `/?api=http://localhost:4000&key=pk_...` with
+the demo origin listed in the API's `CORS_DEV_ORIGINS`. Browser test: `pnpm --filter @jewelry/widget test:e2e`.
 
 ## Working with Claude Code
 

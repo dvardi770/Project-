@@ -9,6 +9,9 @@
  * Webhook: subscribe the Wix app to the eCommerce "Order Approved" event. Wix
  * delivers a JWT signed (RS256) with the app's key; the "secret" used to
  * verify it is the app's public key in PEM form.
+ *
+ * Endpoints, request fields and the webhook envelope were checked against
+ * Wix's SDK packages (@wix/auto_sdk_ecom_checkout, _orders, @wix/sdk).
  */
 import { createVerify } from 'node:crypto';
 import {
@@ -50,8 +53,8 @@ export class WixConnector implements PlatformConnector {
           channelType: 'OTHER_PLATFORM',
           customLineItems: [
             {
-              id: item.bundleId,
               quantity: 1,
+              fixedQuantity: true, // a bundle is one ring
               price: item.amount,
               productName: { original: item.title },
               itemType: { preset: 'PHYSICAL' },
@@ -81,7 +84,11 @@ export class WixConnector implements PlatformConnector {
 }
 
 /** Verify the RS256 signature of a Wix webhook JWT and return its payload, or null. */
-export function verifyWixWebhook(rawBody: Buffer, publicKeyPem: string): Record<string, unknown> | null {
+export function verifyWixWebhook(
+  rawBody: Buffer,
+  publicKeyPem: string,
+  now = Date.now(),
+): Record<string, unknown> | null {
   const token = rawBody.toString('utf8').trim();
   const parts = token.split('.');
   if (parts.length !== 3) return null;
@@ -93,7 +100,9 @@ export function verifyWixWebhook(rawBody: Buffer, publicKeyPem: string): Record<
       .update(`${head}.${payload}`)
       .verify(publicKeyPem, Buffer.from(signature, 'base64url'));
     if (!ok) return null;
-    return JSON.parse(Buffer.from(payload, 'base64url').toString()) as Record<string, unknown>;
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as Record<string, unknown>;
+    if (typeof claims.exp === 'number' && claims.exp * 1000 < now) return null;
+    return claims;
   } catch {
     return null;
   }

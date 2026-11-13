@@ -583,7 +583,7 @@ describe.skipIf(!url)('storefront API', () => {
 
       const [pubs, set, publish] = platformCalls.slice(before).map((c) => c.body);
       expect(pubs.query).toContain('publications');
-      expect(set.variables.input).toMatchObject({ status: 'ACTIVE', variants: [{ price: '13700.00' }] });
+      expect(set.variables.input).toMatchObject({ status: 'UNLISTED', variants: [{ price: '13700.00' }] });
       expect(publish.variables).toMatchObject({ input: [{ publicationId: 'gid://shopify/Publication/1' }] });
 
       const stored = await db.checkoutSession.findUniqueOrThrow({ where: { id: q.bundleId } });
@@ -637,6 +637,26 @@ describe.skipIf(!url)('storefront API', () => {
         .update('extra=1,2path_prefix=/apps/ashop=x.myshopify.comtimestamp=1700000000')
         .digest('hex');
       expect(shopifyProxySignature({ ...query, signature: 'ignored' }, 's')).toBe(expected);
+    });
+
+    it('matches the official library for every query the widget sends', () => {
+      // @shopify/shopify-api sorts by key (stringifyQueryForAppProxy); we sort the pairs.
+      // The two orders agree for all parameter names this API uses.
+      const official = (query: Record<string, string>, secret: string) =>
+        createHmac('sha256', secret)
+          .update(
+            Object.entries(query)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .reduce((acc, [k, v]) => `${acc}${k}=${v}`, ''),
+          )
+          .digest('hex');
+      const params = {
+        shape: 'ROUND,OVAL', origin: 'NATURAL', caratMin: '0.5', caratMax: '3', priceMin: '100', priceMax: '9000',
+        cut: 'IDEAL', clarity: 'VS1,VS2', color: 'D,E', lab: 'GIA', inventory: 'FEED', sort: 'price_asc', page: '2', limit: '24',
+        metal: 'PLATINUM_950', style: 'HALO', carat: '1.2',
+        shop: 'x.myshopify.com', path_prefix: '/apps/ring-builder', timestamp: '1700000000', logged_in_customer_id: '',
+      };
+      expect(shopifyProxySignature(params, 's3cret')).toBe(official(params, 's3cret'));
     });
 
     it('returns Liquid that places the widget in the theme, with no iframe and no API key', async () => {

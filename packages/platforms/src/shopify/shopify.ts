@@ -10,7 +10,10 @@
  * so a one-off product is created at the bundle price and published to the
  * Online Store; the widget then adds that variant with the bundle's properties.
  * Needs write_products and write_publications. One-off products are tagged
- * "ring-builder-bundle" and hidden from storefront search.
+ * "ring-builder-bundle" and created with the UNLISTED status.
+ *
+ * Mutation and input names were checked against the Admin GraphQL schema
+ * (2026-07); the App Proxy and webhook signatures against @shopify/shopify-api.
  *
  * Webhook: subscribe to `orders/paid`. Signed with HMAC-SHA256 over the raw
  * body, base64, in X-Shopify-Hmac-Sha256.
@@ -51,7 +54,8 @@ const DRAFT_ORDER_CREATE = `
     }
   }`;
 
-const PUBLICATIONS = `{ publications(first: 50) { nodes { id name } } }`;
+// Publication.name is deprecated in favour of catalog.title; ask for both.
+const PUBLICATIONS = `{ publications(first: 50) { nodes { id name catalog { title } } } }`;
 
 const PRODUCT_SET = `
   mutation CreateBundleProduct($input: ProductSetInput!) {
@@ -155,8 +159,12 @@ export class ShopifyConnector implements PlatformConnector {
   async createCartItem(item: CheckoutLineItem): Promise<CreatedCartItem> {
     let publicationId = this.credentials.onlineStorePublicationId;
     if (!publicationId) {
-      const pubs = await this.graphql<{ publications: { nodes: { id: string; name: string }[] } }>(PUBLICATIONS);
-      publicationId = pubs.publications.nodes.find((p) => p.name === 'Online Store')?.id;
+      const pubs = await this.graphql<{
+        publications: { nodes: { id: string; name?: string | null; catalog?: { title?: string | null } | null }[] };
+      }>(PUBLICATIONS);
+      publicationId = pubs.publications.nodes.find(
+        (p) => p.name === 'Online Store' || p.catalog?.title === 'Online Store',
+      )?.id;
       if (!publicationId) throw new PlatformError('SHOPIFY', 'the store has no Online Store sales channel');
     }
 
@@ -168,11 +176,11 @@ export class ShopifyConnector implements PlatformConnector {
     }>(PRODUCT_SET, {
       input: {
         title: item.title,
-        status: 'ACTIVE',
+        // Unlisted (Admin API 2025-10+): purchasable by direct reference, but kept
+        // out of search, collections and recommendations.
+        status: 'UNLISTED',
         vendor: 'Ring Builder',
         tags: ['ring-builder-bundle'],
-        // keeps the one-off product out of storefront search and sitemaps
-        metafields: [{ namespace: 'seo', key: 'hidden', type: 'number_integer', value: '1' }],
         productOptions: [{ name: 'Title', values: [{ name: 'Default Title' }] }],
         variants: [
           {

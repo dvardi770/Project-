@@ -662,6 +662,11 @@ model CastingOrder {
   currency     String  @default("USD") @db.Char(3)
   markupRuleId String? @db.Uuid
 
+  // Reservation of the centre stone with its supplier (Nivoda hold).
+  supplierHoldId          String?
+  supplierHoldUntil       DateTime? @db.Timestamptz(3)
+  supplierHoldAttemptedAt DateTime? @db.Timestamptz(3)
+
   // The checkout this order was paid through; unique, so a session can never
   // produce two job bags.
   checkoutSessionId String? @unique @db.Uuid

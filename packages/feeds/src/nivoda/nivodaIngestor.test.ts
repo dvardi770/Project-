@@ -37,7 +37,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const authOk = () => json({ data: { authenticate: { username_and_password: { token: 'tok-1' } } } });
 const page = (items: NivodaItem[], total: number) =>
-  json({ data: { as: { diamonds_by_query: { total_count: total, items } } } });
+  json({ data: { diamonds_by_query: { total_count: total, items } } });
 
 function fakeDb() {
   const upsert = vi.fn((args: unknown) => args);
@@ -97,7 +97,9 @@ describe('NivodaClient', () => {
     const queries = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).query as string);
     expect(queries[0]).toContain('username: "u\\"ser"');
     expect(queries[0]).toContain('password: "p\\\\w"');
-    expect(queries[1]).toContain('as(token: "tok-1")');
+    expect(fetchMock.mock.calls[0]![1].headers.authorization).toBeUndefined();
+    expect(fetchMock.mock.calls[1]![1].headers.authorization).toBe('Bearer tok-1');
+    expect(queries[1]).not.toContain('tok-1');
     expect(queries[1]).toContain('labgrown: true');
     expect(queries[1]).toMatch(/offset: 0,\s+limit: 2/);
     expect(queries[2]).toMatch(/offset: 2,/);
@@ -130,6 +132,22 @@ describe('NivodaClient', () => {
     const failing = new NivodaClient({ ...base, maxRetries: 2, fetch: down });
     await expect(failing.authenticate()).rejects.toThrow(/HTTP 429/);
     expect(down).toHaveBeenCalledTimes(3);
+  });
+
+  it('places a hold with the diamond id and reports a refusal', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(authOk())
+      .mockResolvedValueOnce(json({ data: { create_hold: { id: 'hold-1', denied: false, until: '2026-11-20T10:00:00Z' } } }))
+      .mockResolvedValueOnce(json({ data: { create_hold: { id: 'hold-2', denied: true, until: null } } }));
+    const client = new NivodaClient({ ...base, fetch: fetchMock });
+    const id = '32cd4f24-4b24-4c13-9f5e-8d561aed3978';
+    expect(await client.createHold(id)).toEqual({ id: 'hold-1', denied: false, until: '2026-11-20T10:00:00Z' });
+    const sentQuery = JSON.parse(fetchMock.mock.calls[1]![1].body).query as string;
+    expect(sentQuery).toContain(`create_hold(ProductId: "${id}", ProductType: Diamond)`);
+    expect(fetchMock.mock.calls[1]![1].headers.authorization).toBe('Bearer tok-1');
+    expect(await client.createHold(id)).toMatchObject({ denied: true });
+    await expect(client.createHold('x" ) { id } evil')).rejects.toThrow(/not a Nivoda diamond id/);
   });
 
   it('does not retry GraphQL errors', async () => {

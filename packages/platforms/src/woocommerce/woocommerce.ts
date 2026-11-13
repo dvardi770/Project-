@@ -13,6 +13,9 @@
  * Webhook: subscribe to "Order updated". Signed with HMAC-SHA256 over the raw
  * body, base64, in X-WC-Webhook-Signature. An order counts as paid once its
  * status is processing or completed.
+ *
+ * Writable fields, `payment_url`, the webhook signature and the add-to-cart
+ * AJAX contract were checked against WooCommerce's source.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
@@ -79,7 +82,6 @@ export class WooCommerceConnector implements PlatformConnector {
             {
               product_id: placeholderProductId,
               name: item.title,
-              sku: item.sku,
               quantity: 1,
               subtotal: item.amount,
               total: item.amount,

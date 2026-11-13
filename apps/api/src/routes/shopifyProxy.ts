@@ -39,11 +39,12 @@ type Query = Record<string, string | string[] | undefined>;
 /**
  * Shopify's App Proxy signature: every query parameter except `signature`,
  * as "key=value" (repeated keys joined with ","), sorted, concatenated with
- * no separator, HMAC-SHA256 with the app secret, hex.
+ * no separator, HMAC-SHA256 with the app secret, hex. Same algorithm as
+ * @shopify/shopify-api's validateHmac(..., { signator: 'appProxy' }).
  */
 export function shopifyProxySignature(query: Query, secret: string): string {
   const message = Object.entries(query)
-    .filter(([key, value]) => key !== 'signature' && value !== undefined)
+    .filter(([key, value]) => key !== 'signature' && key !== 'hmac' && value !== undefined)
     .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(',') : value}`)
     .sort()
     .join('');

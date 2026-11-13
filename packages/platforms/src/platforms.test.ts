@@ -156,7 +156,8 @@ describe('Wix', () => {
     const create = sent(fetchMock, 0);
     expect(create.url).toBe('https://www.wixapis.com/ecom/v1/checkouts');
     expect(create.init.headers).toMatchObject({ authorization: 'key', 'wix-site-id': 'site' });
-    expect(create.body.customLineItems[0]).toMatchObject({ quantity: 1, price: '2600.99', productName: { original: item.title } });
+    expect(create.body.customLineItems[0]).toMatchObject({ quantity: 1, fixedQuantity: true, price: '2600.99', productName: { original: item.title } });
+    expect(create.body.customLineItems[0]).not.toHaveProperty('id'); // read-only on Wix
     expect(sent(fetchMock, 1).url).toBe('https://www.wixapis.com/ecom/v1/checkouts/chk_1/checkout-url');
     expect(result).toEqual({ externalCheckoutId: 'chk_1', checkoutUrl: 'https://site.example/checkout?id=chk_1' });
   });
@@ -182,5 +183,9 @@ describe('Wix', () => {
     expect(receiveOrderWebhook('WIX', Buffer.from(tampered), {}, pem).ok).toBe(false);
     expect(receiveOrderWebhook('WIX', Buffer.from(jwt('none', payload)), {}, pem).ok).toBe(false);
     expect(receiveOrderWebhook('WIX', Buffer.from('not-a-jwt'), {}, pem).ok).toBe(false);
+    const expired = jwt('RS256', { ...payload, exp: Math.floor(Date.now() / 1000) - 60 });
+    expect(receiveOrderWebhook('WIX', Buffer.from(expired), {}, pem).ok).toBe(false);
+    const fresh = jwt('RS256', { ...payload, exp: Math.floor(Date.now() / 1000) + 60 });
+    expect(receiveOrderWebhook('WIX', Buffer.from(fresh), {}, pem).ok).toBe(true);
   });
 });

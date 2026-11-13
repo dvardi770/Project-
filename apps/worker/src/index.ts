@@ -6,6 +6,7 @@
  * or a single job once and exit, for platforms that schedule jobs themselves:
  *
  *   pnpm --filter @jewelry/worker job feed-sync
+ *   pnpm --filter @jewelry/worker job supplier-holds
  *   pnpm --filter @jewelry/worker job cart-cleanup
  */
 import { prisma } from '@jewelry/db';
@@ -13,6 +14,7 @@ import { MemoryCache, RedisCache } from '@jewelry/shared/cache';
 import { loadConfig } from './config';
 import { runCartCleanup } from './jobs/cartCleanup';
 import { runFeedSync } from './jobs/feedSync';
+import { runSupplierHolds } from './jobs/supplierHolds';
 
 const config = loadConfig();
 const log = console;
@@ -25,6 +27,10 @@ const jobs = {
   'feed-sync': {
     everyMs: config.feedSyncIntervalMs,
     run: () => runFeedSync({ db: prisma, cache, nivoda: config.nivoda, log }),
+  },
+  'supplier-holds': {
+    everyMs: config.supplierHoldIntervalMs,
+    run: () => runSupplierHolds({ db: prisma, nivoda: config.nivoda, enabled: config.nivodaAutoHold, log }),
   },
   'cart-cleanup': {
     everyMs: config.cleanupIntervalMs,

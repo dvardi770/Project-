@@ -5,6 +5,11 @@
  * with offset/limit → normalise each item → upsert a page per transaction →
  * once the whole feed has been read, flag stones that disappeared.
  *
+ * Query shape, field names, the 50-item page limit, Bearer authentication and
+ * `create_hold` follow Nivoda's published examples
+ * (bitbucket.org/nivoda/nivoda-api, examples/). Those examples do not state the
+ * unit of `price`; see NivodaConfig.priceUnit.
+ *
  * Natural and lab-grown stones are fetched as separate slices using the
  * `labgrown` filter, so origin never depends on a response field.
  */
@@ -57,7 +62,10 @@ export interface NivodaConfig {
    * offsets shallow on very large inventories. Default: one slice per origin.
    */
   caratBands?: CaratBand[];
-  /** Nivoda quotes `price` in USD cents. Set to 'dollars' if your account differs. */
+  /**
+   * Unit of `price` in responses. Assumed to be USD cents; Nivoda's examples do
+   * not say. Confirm against one known stone and set 'dollars' if needed.
+   */
   priceUnit?: 'cents' | 'dollars';
   /** Extra attempts for network errors, HTTP 429 and 5xx. Default 4. */
   maxRetries?: number;
@@ -118,7 +126,16 @@ interface GraphQLResponse<T> {
 }
 
 interface DiamondsPage {
-  as: { diamonds_by_query: { total_count: number; items: NivodaItem[] } };
+  diamonds_by_query: { total_count: number; items: NivodaItem[] };
+}
+
+/** Result of asking Nivoda to reserve a stone. */
+export interface NivodaHold {
+  id: string;
+  /** True when Nivoda refused the hold (the stone is no longer free). */
+  denied: boolean;
+  /** When the hold lapses, as Nivoda reports it. */
+  until: string | null;
 }
 
 export class NivodaApiError extends Error {
@@ -318,8 +335,8 @@ export class NivodaClient {
     for (let attempt = 0; ; attempt++) {
       const token = await this.getToken();
       try {
-        const data = await this.post<DiamondsPage>(this.buildQuery(token, slice, offset));
-        const result = data.as?.diamonds_by_query;
+        const data = await this.post<DiamondsPage>(this.buildQuery(slice, offset), token);
+        const result = data.diamonds_by_query;
         if (!result) throw new NivodaApiError('Nivoda response is missing diamonds_by_query');
         return {
           slice,
@@ -350,27 +367,53 @@ export class NivodaClient {
     }
   }
 
-  private buildQuery(token: string, slice: NivodaSlice, offset: number): string {
+  private buildQuery(slice: NivodaSlice, offset: number): string {
     const filters = [`labgrown: ${slice.origin === 'LAB_GROWN'}`];
     if (slice.caratBand) {
       filters.push(`sizes: [{ from: ${Number(slice.caratBand.from)}, to: ${Number(slice.caratBand.to)} }]`);
     }
     // A fixed sort keeps offsets meaningful from one page to the next.
-    return `{
-      as(token: ${JSON.stringify(token)}) {
-        diamonds_by_query(
-          query: { ${filters.join(', ')} },
-          offset: ${offset},
-          limit: ${this.pageSize},
-          order: { type: price, direction: ASC }
-        ) {${ITEM_SELECTION}
-        }
+    return `query {
+      diamonds_by_query(
+        query: { ${filters.join(', ')} },
+        offset: ${offset},
+        limit: ${this.pageSize},
+        order: { type: price, direction: ASC }
+      ) {${ITEM_SELECTION}
       }
     }`;
   }
 
+  /**
+   * Ask Nivoda to hold a stone. `diamondId` is the diamond's id from the feed
+   * (DiamondCache.sourceStockId). A hold reserves the stone; it does not buy it.
+   */
+  async createHold(diamondId: string): Promise<NivodaHold> {
+    if (!/^[A-Za-z0-9-]{8,64}$/.test(diamondId)) throw new NivodaApiError(`not a Nivoda diamond id: ${diamondId}`);
+    const mutation = `mutation {
+      create_hold(ProductId: ${JSON.stringify(diamondId)}, ProductType: Diamond) { id denied until }
+    }`;
+    for (let attempt = 0; ; attempt++) {
+      const token = await this.getToken();
+      try {
+        const data = await this.post<{
+          create_hold: { id: string; denied: boolean | null; until: string | number | null } | null;
+        }>(mutation, token);
+        const hold = data.create_hold;
+        if (!hold?.id) throw new NivodaApiError('Nivoda did not return a hold');
+        return { id: String(hold.id), denied: hold.denied === true, until: hold.until == null ? null : String(hold.until) };
+      } catch (err) {
+        if (attempt === 0 && err instanceof NivodaApiError && err.isAuthError) {
+          this.token = null;
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
   /** POST a query with timeout, and retry with backoff on transient failures. */
-  private async post<T>(query: string): Promise<T> {
+  private async post<T>(query: string, token?: string): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       if (attempt > 0) await this.sleep(Math.min(1000 * 2 ** (attempt - 1), 30_000));
@@ -378,7 +421,11 @@ export class NivodaClient {
       try {
         response = await this.fetchImpl(this.endpoint, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            accept: 'application/json',
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ query }),
           signal: AbortSignal.timeout(this.timeoutMs),
         });

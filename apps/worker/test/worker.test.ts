@@ -9,6 +9,7 @@ import { encryptJson, parseEncryptionKey } from '@jewelry/platforms';
 import { MemoryCache, inventoryEpoch } from '@jewelry/shared/cache';
 import { runCartCleanup } from '../src/jobs/cartCleanup';
 import { runFeedSync } from '../src/jobs/feedSync';
+import { runSupplierHolds } from '../src/jobs/supplierHolds';
 
 const url = process.env.TEST_DATABASE_URL;
 const KEY = parseEncryptionKey('cd'.repeat(32));
@@ -147,7 +148,7 @@ describe.skipIf(!url)('worker jobs', () => {
         const query = JSON.parse(String(init?.body)).query as string;
         if (query.includes('authenticate')) return json({ data: { authenticate: { username_and_password: { token: 't' } } } });
         const items = query.includes('labgrown: true') ? lab : natural;
-        return json({ data: { as: { diamonds_by_query: { total_count: items.length, items } } } });
+        return json({ data: { diamonds_by_query: { total_count: items.length, items } } });
       });
     const run = (cache: MemoryCache, fetchMock: ReturnType<typeof nivoda>) =>
       runFeedSync({ db, cache, log: quiet, nivoda: { username: 'u', password: 'p', fetch: fetchMock as typeof fetch, sleep: async () => {} } });
@@ -192,6 +193,54 @@ describe.skipIf(!url)('worker jobs', () => {
       expect(await availability('nv-2')).toBe('UNAVAILABLE');
       expect(await availability('nv-3')).toBe('AVAILABLE');
       expect(await inventoryEpoch(cache)).not.toBe(epoch);
+    });
+
+    it('reserves confirmed Nivoda stones and puts refused ones on hold for review', async () => {
+      const order = async (n: number, stockId: string, status: 'CONFIRMED' | 'ON_HOLD' = 'CONFIRMED') => {
+        const d = await db.diamondCache.create({
+          data: { source: 'NIVODA', sourceStockId: stockId, origin: 'NATURAL', shape: 'ROUND', carat: '1', wholesalePrice: '1000', pricePerCarat: '1000', availability: 'ON_HOLD' },
+        });
+        return db.castingOrder.create({
+          data: {
+            tenantId, jobBagNumber: `JB-HOLD-${n}`, status, externalOrderId: `h-${n}`, settingVariantId: variantId, metal: 'PLATINUM_950',
+            cadId: 'CAD-W', ringSize: '6', centerDiamondId: d.id, centerStoneSnapshot: {}, castingCost: '500', stoneCost: '1000', retailTotal: '3000',
+          },
+        });
+      };
+      const ok = await order(1, 'aaaaaaaa-1111-4111-8111-111111111111');
+      const refused = await order(2, 'bbbbbbbb-2222-4222-8222-222222222222');
+      const flaky = await order(3, 'cccccccc-3333-4333-8333-333333333333');
+      const review = await order(4, 'dddddddd-4444-4444-8444-444444444444', 'ON_HOLD');
+      await db.castingOrder.updateMany({ where: { jobBagNumber: 'JB-TEST-000001' }, data: { supplierHoldAttemptedAt: new Date() } });
+
+      const asked: string[] = [];
+      const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const query = JSON.parse(String(init?.body)).query as string;
+        if (query.includes('authenticate')) return json({ data: { authenticate: { username_and_password: { token: 't' } } } });
+        const id = query.match(/ProductId: "([^"]+)"/)![1]!;
+        asked.push(id);
+        if (id.startsWith('bbbb')) return json({ data: { create_hold: { id: 'hold-b', denied: true, until: null } } });
+        if (id.startsWith('cccc')) return json({ errors: [{ message: 'Something went wrong' }] });
+        return json({ data: { create_hold: { id: 'hold-a', denied: false, until: '2026-12-01T00:00:00.000Z' } } });
+      });
+      const deps = { db, log: quiet, nivoda: { username: 'u', password: 'p', fetch: fetchMock as typeof fetch, sleep: async () => {} } };
+
+      expect(await runSupplierHolds({ ...deps, enabled: false })).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      expect(await runSupplierHolds({ ...deps, enabled: true })).toEqual({ held: 1, denied: 1, failed: 1 });
+      expect(asked.sort()).toEqual(['aaaaaaaa-1111-4111-8111-111111111111', 'bbbbbbbb-2222-4222-8222-222222222222', 'cccccccc-3333-4333-8333-333333333333']);
+      const get = (id: string) => db.castingOrder.findUniqueOrThrow({ where: { id } });
+      expect(await get(ok.id)).toMatchObject({ status: 'CONFIRMED', supplierHoldId: 'hold-a', supplierHoldUntil: new Date('2026-12-01T00:00:00.000Z') });
+      const r = await get(refused.id);
+      expect(r).toMatchObject({ status: 'ON_HOLD', supplierHoldId: null });
+      expect(r.notes).toMatch(/Nivoda declined/);
+      expect((await get(flaky.id)).supplierHoldAttemptedAt).toBeNull(); // retried next run
+      expect((await get(review.id)).supplierHoldAttemptedAt).toBeNull(); // waiting for a person, not touched
+
+      asked.length = 0;
+      expect(await runSupplierHolds({ ...deps, enabled: true })).toEqual({ held: 0, denied: 0, failed: 1 });
+      expect(asked).toEqual(['cccccccc-3333-4333-8333-333333333333']);
     });
 
     it('does nothing without Nivoda credentials', async () => {

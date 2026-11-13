@@ -108,7 +108,8 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
-  private async graphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  /** Run an Admin GraphQL operation as this store. Throws PlatformError on transport or top-level errors. */
+  async graphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
     const { shopDomain, accessToken, apiVersion = DEFAULT_API_VERSION } = this.credentials;
     const body = await requestJson<GraphQLBody<T>>(
       'SHOPIFY',

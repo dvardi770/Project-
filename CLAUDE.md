@@ -19,7 +19,10 @@ for the layout, purchase flow and store setup.
 - `packages/shared` — `storefront.ts` is the API response contract used by the widget; the API proves
   its DTOs match it in `apps/api/src/contract.ts`. `cache.ts` is the cache shared by API and worker.
 - `integrations/wordpress/jewelry-builder` — the WooCommerce plugin (PHP, WordPress coding style, tabs).
-- `apps/dashboard` is a placeholder.
+- `apps/dashboard` — Next.js (App Router) merchant admin: markup matrix, order fulfilment, billing
+  (Shopify Billing API for Shopify stores, Stripe Subscriptions otherwise). Server code reads the
+  database directly through `@jewelry/db`; client components must import `lib/markup-shared.ts`, never
+  `lib/markup.ts`, which pulls in Prisma.
 
 ## Commands
 
@@ -31,6 +34,7 @@ DATABASE_URL=... pnpm --filter @jewelry/db migrate:deploy
 TEST_DATABASE_URL=... [TEST_REDIS_URL=...] pnpm test   # full suite, needs a disposable migrated Postgres
 pnpm dev:api
 php integrations/wordpress/tests/run.php     # plugin smoke test (stand-ins for WordPress, no WP needed)
+TEST_DATABASE_URL=... pnpm --filter @jewelry/dashboard test:e2e   # builds the dashboard, drives it in Chromium
 pnpm --filter @jewelry/widget test:e2e       # builds the widget and drives it in Chromium (needs Playwright's browser)
 ```
 
@@ -47,6 +51,8 @@ generate SQL with `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-da
 - Not established by any source: whether Nivoda's `price` is in cents (assumed; `NIVODA_PRICE_UNIT`).
   Nivoda documents cents for its price *filters* only. The feed sync refuses to write anything if the
   cheapest stones' per-carat prices are implausible for the configured unit (`assertPlausiblePrices`).
+- Billing was checked the same way (Shopify schema, Stripe's `stripe` package) and tested against a
+  local stand-in for Stripe, never a real Stripe or Shopify account.
 - The WordPress plugin was exercised on a real WordPress 6.4 site, but without WooCommerce installed.
 - A stone on a live casting order stays `ON_HOLD` locally. The worker can also place a Nivoda hold
   (`NIVODA_AUTO_HOLD=true`, off by default). Nothing ever buys a stone automatically.

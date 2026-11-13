@@ -30,8 +30,19 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │           ├── feedSync.ts     # Nivoda -> DiamondCache, then drops cached searches
 │   │           ├── supplierHolds.ts # optional: reserve ordered stones with Nivoda
 │   │           └── cartCleanup.ts  # expires checkout sessions, removes one-off cart products
-│   ├── dashboard/              # merchant admin web app
-│   │   └── src/{app,components,lib}/
+│   ├── dashboard/              # merchant admin (Next.js App Router)
+│   │   ├── src/app/
+│   │   │   ├── login/              # sign in with the account's secret key
+│   │   │   ├── markup-settings/    # markup by carat tier and stone origin
+│   │   │   ├── fulfillment/        # order history, "Fulfill Casting via Platform Foundry"
+│   │   │   ├── billing/            # subscription status, subscribe, manage
+│   │   │   └── api/billing/        # subscribe, portal, Stripe + Shopify webhooks, Shopify return
+│   │   ├── src/lib/
+│   │   │   ├── billing.ts          # Shopify Billing API + Stripe Subscriptions
+│   │   │   ├── markup.ts           # matrix <-> MarkupRule rows
+│   │   │   ├── fulfillment.ts      # order list, release to the foundry
+│   │   │   └── session.ts          # signed session cookie
+│   │   └── test/                   # database-backed tests + browser test
 │   └── widget/                 # embeddable ring builder (Lit web component)
 │       ├── src/
 │       │   ├── jewelry-configurator.ts   # <jewelry-configurator>: 3-step wizard in a shadow root
@@ -156,6 +167,41 @@ domains: Shopify's signature identifies the store.
 5. Add the order webhook under WooCommerce > Settings > Advanced > Webhooks (topic "Order updated").
 
 Plugin check without WordPress: `php integrations/wordpress/tests/run.php`.
+
+## Merchant dashboard
+
+```
+pnpm --filter @jewelry/dashboard dev      # http://localhost:3100
+pnpm --filter @jewelry/dashboard build && pnpm --filter @jewelry/dashboard start
+```
+
+See `apps/dashboard/.env.example`. A merchant signs in with their account's secret key
+(`pnpm --filter @jewelry/api issue-key <tenant-slug> --secret`).
+
+- **Markup** edits a table of carat tiers by stone origin. Each cell is stored as a pricing rule, so the
+  storefront picks the change up within a minute. Until a markup is saved, nothing is for sale. Rules
+  created outside this page (by feed, cost band or priority) are left untouched.
+- **Orders** lists the rings bought through the store. "Fulfill Casting via Platform Foundry" moves a
+  confirmed order into production at the vendor named by `PLATFORM_FOUNDRY_NAME` and starts its first
+  production step. Orders on hold show the reason and cannot be sent until that is resolved.
+- **Billing** shows the subscription and starts or manages it.
+
+### Billing setup
+
+One plan, billed monthly. The provider follows the store's platform:
+
+| Store | Billed through | To configure |
+|---|---|---|
+| Shopify | Shopify Billing API (appears on the merchant's Shopify invoice) | `SHOPIFY_APP_SECRET`; subscribe the app to the `app_subscriptions/update` webhook at `<dashboard>/api/billing/shopify/webhook`. Set `SHOPIFY_BILLING_TEST=true` on development stores. |
+| WooCommerce, Wix, custom | Stripe Subscriptions | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID` (a recurring monthly Price), `STRIPE_WEBHOOK_SECRET`; add a webhook endpoint at `<dashboard>/api/billing/stripe/webhook` for `checkout.session.completed`, `customer.subscription.*`, `invoice.paid` and `invoice.payment_failed`. |
+
+The Shopify price comes from `BILLING_PRICE_USD`; the Stripe price is whatever the Stripe Price says, so
+keep the two equal. Webhooks keep `Tenant.subscriptionStatus` current, and the storefront API serves
+only tenants that are active or trialing: a failed payment switches the store's ring builder off, and a
+successful one switches it back on.
+
+Tests: `TEST_DATABASE_URL=... pnpm test` covers billing, markup and fulfilment;
+`TEST_DATABASE_URL=... pnpm --filter @jewelry/dashboard test:e2e` drives the built app in a browser.
 
 ## Background worker
 

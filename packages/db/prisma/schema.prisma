@@ -577,9 +577,15 @@ model CheckoutSession {
   platform PlatformType
   status   CheckoutStatus @default(OPEN)
 
-  // Draft order / order / checkout id on the storefront platform
+  // Draft order / order / checkout id on the storefront platform; for a
+  // native-cart hand-off, the id the storefront's add-to-cart call takes.
   externalCheckoutId String?
   checkoutUrl        String?
+
+  // One-off product created for a native-cart hand-off, removed by the worker
+  // once the bundle is ordered or the session expires.
+  externalProductId String?
+  productDeletedAt  DateTime? @db.Timestamptz(3)
 
   settingVariantId String      @db.Uuid
   stoneSource      StoneSource
@@ -602,6 +608,7 @@ model CheckoutSession {
 
   @@unique([tenantId, externalCheckoutId])
   @@index([tenantId, status])
+  @@index([productDeletedAt, expiresAt])
   @@map("checkout_sessions")
 }
 

@@ -25,6 +25,8 @@ export interface CreatedCheckout {
 export interface CreatedCartItem {
   /** What the storefront's add-to-cart call takes: a Shopify variant id or a WooCommerce product id. */
   purchasableId: string;
+  /** The platform's id for the product itself, used to delete it later. */
+  productId: string;
 }
 
 export interface NormalizedOrderLine {
@@ -59,6 +61,8 @@ export interface PlatformConnector {
   createCheckout(item: CheckoutLineItem): Promise<CreatedCheckout>;
   /** Only on platforms whose native cart can be used; absent elsewhere. */
   createCartItem?(item: CheckoutLineItem): Promise<CreatedCartItem>;
+  /** Remove a product made by createCartItem. Succeeds if it is already gone. */
+  deleteCartItem?(productId: string): Promise<void>;
 }
 
 /** Line-item property that carries the bundle id. A leading "_" hides it from shoppers on Shopify and WooCommerce. */

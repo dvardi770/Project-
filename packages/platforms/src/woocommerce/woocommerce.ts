@@ -132,7 +132,23 @@ export class WooCommerceConnector implements PlatformConnector {
       this.http,
     );
     if (!product.id) throw new PlatformError('WOOCOMMERCE', 'product was created without an id');
-    return { purchasableId: String(product.id) };
+    return { purchasableId: String(product.id), productId: String(product.id) };
+  }
+
+  async deleteCartItem(productId: string): Promise<void> {
+    const { consumerKey, consumerSecret } = this.credentials;
+    const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+    try {
+      await requestJson<unknown>(
+        'WOOCOMMERCE',
+        `${this.base}/wp-json/wc/v3/products/${encodeURIComponent(productId)}?force=true`,
+        { method: 'DELETE', headers: { authorization: `Basic ${auth}` } },
+        this.http,
+      );
+    } catch (err) {
+      // Already deleted is fine.
+      if (!(err instanceof PlatformError && (err.status === 404 || err.status === 410))) throw err;
+    }
   }
 }
 

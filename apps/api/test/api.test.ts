@@ -578,6 +578,9 @@ describe.skipIf(!url)('storefront API', () => {
       expect(set.variables.input).toMatchObject({ status: 'ACTIVE', variants: [{ price: '13700.00' }] });
       expect(publish.variables).toMatchObject({ input: [{ publicationId: 'gid://shopify/Publication/1' }] });
 
+      const stored = await db.checkoutSession.findUniqueOrThrow({ where: { id: q.bundleId } });
+      expect(stored.externalProductId).toMatch(/^gid:\/\/shopify\/Product\/\d+$/); // kept so the worker can delete it
+
       const calls = platformCalls.length;
       expect((await cartItem(q.token)).json().purchasableId).toBe(item.purchasableId); // retry makes no new product
       expect(platformCalls.length).toBe(calls);

@@ -35,6 +35,9 @@ importers:
       '@jewelry/pricing':
         specifier: workspace:*
         version: link:../../packages/pricing
+      '@jewelry/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       fastify:
         specifier: ^5.0.0
         version: 5.12.8
@@ -50,6 +53,9 @@ importers:
 
   apps/widget:
     dependencies:
+      '@jewelry/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       lit:
         specifier: ^3.2.0
         version: 3.3.3
@@ -60,6 +66,27 @@ importers:
       vite:
         specifier: ^8.0.0
         version: 8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
+
+  apps/worker:
+    dependencies:
+      '@jewelry/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@jewelry/feeds':
+        specifier: workspace:*
+        version: link:../../packages/feeds
+      '@jewelry/platforms':
+        specifier: workspace:*
+        version: link:../../packages/platforms
+      '@jewelry/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      zod:
+        specifier: ^4.0.0
+        version: 4.6.7
 
   packages/db:
     dependencies:
@@ -88,6 +115,12 @@ importers:
       '@jewelry/db':
         specifier: workspace:*
         version: link:../db
+
+  packages/shared:
+    dependencies:
+      ioredis:
+        specifier: ^5.4.0
+        version: 5.11.1
 
 packages:
 

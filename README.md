@@ -21,12 +21,12 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   │   ├── services/           # bundle resolution, order intake
 │   │   │   └── modules/            # dashboard-side features (to come)
 │   │   └── test/                   # integration tests (real Postgres)
-│   ├── worker/                 # background jobs
-│   │   └── src/jobs/
-│   │       ├── feed-sync/          # Nivoda / RapNet -> DiamondCache
-│   │       ├── cache-prune/        # mark stale diamonds unavailable
-│   │       ├── platform-sync/      # push products / orders to storefronts
-│   │       └── casting-dispatch/   # send job tickets to casting vendors
+│   ├── worker/                 # background jobs (one process, or one job per invocation)
+│   │   └── src/
+│   │       ├── index.ts            # scheduler and `--once <job>` entry point
+│   │       └── jobs/
+│   │           ├── feedSync.ts     # Nivoda -> DiamondCache, then drops cached searches
+│   │           └── cartCleanup.ts  # expires checkout sessions, removes one-off cart products
 │   ├── dashboard/              # merchant admin web app
 │   │   └── src/{app,components,lib}/
 │   └── widget/                 # embeddable ring builder (Lit web component)
@@ -50,8 +50,10 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   └── src/{shopify,woocommerce,wix}/ + secretBox.ts (credential encryption)
 │   ├── pricing/                # markup engine
 │   │   └── src/pricingEngine.ts
-│   ├── shared/                 # cross-app types, validation schemas, constants
-│   │   └── src/{types,schemas,constants}/
+│   ├── shared/                 # code used by more than one app
+│   │   └── src/
+│   │       ├── storefront.ts       # storefront API response types (API and widget both use them)
+│   │       └── cache.ts            # Redis / in-memory cache and the inventory epoch
 │   └── config/                 # shared tsconfig / lint presets
 ├── infra/
 │   ├── docker/
@@ -114,8 +116,25 @@ The command prints the webhook URL to register on the store. `secrets.json` is
    Orders that arrive underpaid, or for a stone that is no longer available, are created `ON_HOLD`.
 
 For the native cart, Shopify credentials also need `write_products` and `write_publications`. One-off
-products are tagged `ring-builder-bundle` (Shopify) or hidden from the catalogue (WooCommerce); nothing
-deletes them yet.
+products are tagged `ring-builder-bundle` (Shopify) or hidden from the catalogue (WooCommerce). The
+worker deletes each one an hour after its bundle is ordered, or when its checkout session expires
+(7 days).
+
+## Background worker
+
+```
+pnpm --filter @jewelry/worker start                 # runs every job on its interval
+pnpm --filter @jewelry/worker job feed-sync         # or run one job once and exit
+pnpm --filter @jewelry/worker job cart-cleanup
+```
+
+See `apps/worker/.env.example`. Give it the same `REDIS_URL` and `CREDENTIALS_ENCRYPTION_KEY` as the API.
+
+- **feed-sync** needs `NIVODA_USERNAME` and `NIVODA_PASSWORD` and is skipped without them. It upserts
+  the feed, marks stones that left the feed unavailable (only after a complete run), keeps stones that
+  are on a live order on hold whatever the feed says, and drops the API's cached searches.
+- **cart-cleanup** marks unpaid checkout sessions past their expiry as expired and removes one-off
+  cart products from stores.
 
 ## Embedding the ring builder
 

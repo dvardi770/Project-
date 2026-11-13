@@ -60,6 +60,19 @@ describe('Shopify', () => {
   });
 });
 
+describe('Shopify native cart', () => {
+  it('deletes a one-off product and tolerates one that is already gone', async () => {
+    const ok = reply({ data: { productDelete: { deletedProductId: 'gid://shopify/Product/5', userErrors: [] } } });
+    const c = new ShopifyConnector({ shopDomain: 'x.myshopify.com', accessToken: 't' }, { fetch: ok });
+    await c.deleteCartItem('gid://shopify/Product/5');
+    expect(sent(ok).body.variables).toEqual({ input: { id: 'gid://shopify/Product/5' } });
+    const gone = reply({ data: { productDelete: { deletedProductId: null, userErrors: [{ field: ['id'], message: 'Product does not exist' }] } } });
+    await expect(new ShopifyConnector({ shopDomain: 'x.myshopify.com', accessToken: 't' }, { fetch: gone }).deleteCartItem('x')).resolves.toBeUndefined();
+    const denied = reply({ data: { productDelete: { deletedProductId: null, userErrors: [{ field: null, message: 'Access denied' }] } } });
+    await expect(new ShopifyConnector({ shopDomain: 'x.myshopify.com', accessToken: 't' }, { fetch: denied }).deleteCartItem('x')).rejects.toThrow(/Access denied/);
+  });
+});
+
 describe('WooCommerce', () => {
   const creds = { siteUrl: 'https://shop.example.com/', consumerKey: 'ck_1', consumerSecret: 'cs_1', placeholderProductId: 42 };
 
@@ -91,7 +104,19 @@ describe('WooCommerce', () => {
       sold_individually: true,
       sku: 'SOL-1-WHITE_GOLD_14K-3f0c9b0e',
     });
-    expect(result).toEqual({ purchasableId: '777' });
+    expect(result).toEqual({ purchasableId: '777', productId: '777' });
+  });
+
+  it('deletes a one-off product and tolerates one that is already gone', async () => {
+    const fetchMock = reply({ id: 777 });
+    const connector = new WooCommerceConnector(creds, { fetch: fetchMock });
+    await connector.deleteCartItem('777');
+    expect(sent(fetchMock).url).toBe('https://shop.example.com/wp-json/wc/v3/products/777?force=true');
+    expect(sent(fetchMock).init.method).toBe('DELETE');
+    const missing = vi.fn().mockResolvedValue(new Response('{}', { status: 404 }));
+    await expect(new WooCommerceConnector(creds, { fetch: missing }).deleteCartItem('1')).resolves.toBeUndefined();
+    const broken = vi.fn().mockResolvedValue(new Response('{}', { status: 500 }));
+    await expect(new WooCommerceConnector(creds, { fetch: broken }).deleteCartItem('1')).rejects.toThrow(/HTTP 500/);
   });
 
   it('requires https', () => {

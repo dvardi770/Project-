@@ -295,7 +295,7 @@ export async function cartRoutes(app: FastifyInstance, deps: AppDeps): Promise<v
     const created = await onPlatform(request, tenant.id, () => connector.createCartItem!(item));
     await db.checkoutSession.update({
       where: { id: claims.bundleId },
-      data: { externalCheckoutId: created.purchasableId },
+      data: { externalCheckoutId: created.purchasableId, externalProductId: created.productId },
     });
     return respond(created.purchasableId);
   });

@@ -15,8 +15,10 @@ for the layout, purchase flow and store setup.
 - `packages/platforms` — storefront connectors and credential encryption.
 - `apps/api` — Fastify storefront API.
 - `apps/widget` — Lit web component (`<jewelry-configurator>`), built by Vite into one ASCII-only script.
-  Its API types in `src/api.ts` are hand-written copies of the API's response shapes; change both together.
-- `apps/worker`, `apps/dashboard` are placeholders.
+- `apps/worker` — background jobs: Nivoda feed sync and checkout-session / cart-product cleanup.
+- `packages/shared` — `storefront.ts` is the API response contract used by the widget; the API proves
+  its DTOs match it in `apps/api/src/contract.ts`. `cache.ts` is the cache shared by API and worker.
+- `apps/dashboard` is a placeholder.
 
 ## Commands
 
@@ -39,6 +41,8 @@ generate SQL with `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-da
 - An item that no markup rule prices is not for sale and must look like it does not exist.
 - The Nivoda query and the Shopify, WooCommerce and Wix connectors were written without access to the
   vendors' documentation and have not been run against live accounts.
+- A stone on a live casting order stays `ON_HOLD` locally; nothing reserves or buys it from Nivoda.
+- Test files that use the database run one at a time (`fileParallelism: false`) and truncate it first.
 
 ## Working agreements
 

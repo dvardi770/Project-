@@ -43,7 +43,8 @@ function fakeDb() {
   const upsert = vi.fn((args: unknown) => args);
   const updateMany = vi.fn().mockResolvedValue({ count: 3 });
   const $transaction = vi.fn(async (ops: unknown[]) => ops);
-  return { db: { diamondCache: { upsert, updateMany }, $transaction } as never, upsert, updateMany };
+  const findMany = vi.fn().mockResolvedValue([]);
+  return { db: { diamondCache: { upsert, updateMany, findMany }, $transaction } as never, upsert, updateMany };
 }
 
 const quiet = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };

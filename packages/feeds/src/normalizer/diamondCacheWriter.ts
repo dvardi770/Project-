@@ -20,9 +20,21 @@ export async function upsertDiamonds(
   const unique = new Map<string, NormalizedDiamond>();
   for (const d of diamonds) unique.set(`${d.source}:${d.sourceStockId}`, d);
 
+  // A stone promised to a customer stays on hold here even if the feed still
+  // lists it as available: the feed does not know about our orders.
+  const allocated = await db.diamondCache.findMany({
+    where: {
+      OR: [...unique.values()].map((d) => ({ source: d.source, sourceStockId: d.sourceStockId })),
+      castingOrders: { some: { status: { notIn: ['CANCELED', 'DELIVERED'] } } },
+    },
+    select: { source: true, sourceStockId: true },
+  });
+  const held = new Set(allocated.map((d) => `${d.source}:${d.sourceStockId}`));
+
   await db.$transaction(
-    [...unique.values()].map((d) => {
-      const data = { ...d, syncRunId, lastSyncedAt: syncedAt };
+    [...unique.entries()].map(([key, d]) => {
+      const availability = held.has(key) && d.availability === 'AVAILABLE' ? ('ON_HOLD' as const) : d.availability;
+      const data = { ...d, availability, syncRunId, lastSyncedAt: syncedAt };
       return db.diamondCache.upsert({
         where: { source_sourceStockId: { source: d.source, sourceStockId: d.sourceStockId } },
         create: data,

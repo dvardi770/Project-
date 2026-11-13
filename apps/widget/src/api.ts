@@ -1,81 +1,8 @@
-/** Typed client for the storefront API. Shapes mirror apps/api/src/routes. */
+/** Typed client for the storefront API. Response shapes come from the shared contract. */
 
-export interface Money {
-  amount: string;
-  currency: string;
-}
+import type { Bundle, CartItem, Checkout, Diamond, Page, Setting } from '@jewelry/shared/storefront';
 
-export interface SettingVariant {
-  id: string;
-  metal: string;
-  metalWeightGrams: number | null;
-  video360Url: string | null;
-  imageUrls: string[];
-  price: Money;
-}
-
-export interface Setting {
-  id: string;
-  sku: string;
-  name: string;
-  description: string | null;
-  style: string;
-  compatibleShapes: string[];
-  centerCarat: { min: number; max: number };
-  ringSize: { min: number | null; max: number | null };
-  leadTimeDays: number | null;
-  video360Url: string | null;
-  thumbnailUrl: string | null;
-  sideStones: { shape: string; quantity: number; totalCarat: number }[];
-  variants: SettingVariant[];
-  priceFrom: Money;
-}
-
-export interface Diamond {
-  id: string;
-  inventory: 'FEED' | 'MERCHANT';
-  origin: 'NATURAL' | 'LAB_GROWN';
-  shape: string;
-  carat: number;
-  color: string | null;
-  clarity: string | null;
-  cut: string | null;
-  polish: string | null;
-  symmetry: string | null;
-  fluorescence: string | null;
-  lab: string;
-  certificateNumber: string | null;
-  certificateUrl: string | null;
-  measurements: { lengthMm: number | null; widthMm: number | null; depthMm: number | null; lwRatio: number | null };
-  imageUrl: string | null;
-  videoUrl: string | null;
-  deliveryDays: number | null;
-  price: Money;
-}
-
-export interface Page<T> {
-  data: T[];
-  page: number;
-  limit: number;
-  total: number;
-  totalCapped?: boolean;
-  hasMore: boolean;
-}
-
-export interface Bundle {
-  bundleId: string;
-  expiresAt: number;
-  token: string;
-  lineItem: { title: string; sku: string; price: Money; imageUrl: string | null; properties: Record<string, string> };
-}
-
-export interface CartItem {
-  bundleId: string;
-  platform: 'SHOPIFY' | 'WOOCOMMERCE' | 'WIX' | 'CUSTOM';
-  purchasableId: string;
-  quantity: number;
-  properties: Record<string, string>;
-}
+export type { Bundle, CartItem, Checkout, Diamond, Money, Page, Setting, SettingVariant } from '@jewelry/shared/storefront';
 
 export class ApiError extends Error {
   constructor(
@@ -123,7 +50,7 @@ export class ConfiguratorApi {
   }
 
   checkout(token: string) {
-    return this.request<{ bundleId: string; checkoutUrl: string }>('POST', '/api/v1/checkout', undefined, { token });
+    return this.request<Checkout>('POST', '/api/v1/checkout', undefined, { token });
   }
 
   private async request<T>(method: string, path: string, query?: Query, body?: unknown, signal?: AbortSignal): Promise<T> {

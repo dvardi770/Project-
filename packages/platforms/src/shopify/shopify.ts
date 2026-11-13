@@ -68,6 +68,14 @@ const PUBLISH = `
     }
   }`;
 
+const PRODUCT_DELETE = `
+  mutation DeleteBundleProduct($input: ProductDeleteInput!) {
+    productDelete(input: $input) {
+      deletedProductId
+      userErrors { field message }
+    }
+  }`;
+
 interface GraphQLBody<T> {
   data?: T;
   errors?: { message: string }[];
@@ -187,7 +195,17 @@ export class ShopifyConnector implements PlatformConnector {
       input: [{ publicationId }],
     });
     ShopifyConnector.check(published.publishablePublish.userErrors);
-    return { purchasableId: variantId };
+    return { purchasableId: variantId, productId: product.id };
+  }
+
+  async deleteCartItem(productId: string): Promise<void> {
+    const data = await this.graphql<{ productDelete: { deletedProductId: string | null; userErrors: UserErrors } }>(
+      PRODUCT_DELETE,
+      { input: { id: productId } },
+    );
+    const errors = data.productDelete.userErrors;
+    // A product someone already removed by hand is the outcome we wanted.
+    if (errors.length && !errors.every((e) => /not exist|not found/i.test(e.message))) ShopifyConnector.check(errors);
   }
 }
 

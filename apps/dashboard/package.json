@@ -1,0 +1,28 @@
+{
+  "name": "@jewelry/dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:e2e": "next build && tsx test/e2e.ts"
+  },
+  "dependencies": {
+    "@jewelry/db": "workspace:*",
+    "@jewelry/platforms": "workspace:*",
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@jewelry/pricing": "workspace:*",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "playwright": "1.63.0",
+    "tsx": "^4.19.0"
+  }
+}

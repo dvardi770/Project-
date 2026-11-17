@@ -1,0 +1,12 @@
+{
+  "name": "@jewelry/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./storefront": "./src/storefront.ts",
+    "./cache": "./src/cache.ts"
+  },
+  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": { "ioredis": "^5.4.0" }
+}

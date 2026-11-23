@@ -23,6 +23,7 @@ import rhino3dm from 'rhino3dm';
 import * as THREE from 'three';
 import { ConvexHull } from 'three/examples/jsm/math/ConvexHull.js';
 import { MeshBVH } from 'three-mesh-bvh';
+import { encodeMesh } from './meshData.mjs';
 
 const [configPath, outDir] = process.argv.slice(2);
 if (!configPath || !outDir) {
@@ -70,17 +71,8 @@ function rawMesh(g) {
   return { P: new Float32Array(P), N: new Float32Array(N), I: new Uint32Array(I) };
 }
 
-/** Writes a mesh into the output buffer; `ao` (0..1 per vertex) is optional. */
-function emit(m, ao) {
-  const big = m.P.length / 3 > 65535;
-  const out = {
-    pos: push(m.P), nPos: m.P.length,
-    nrm: push(Int16Array.from(m.N, (v) => Math.round(Math.max(-1, Math.min(1, v)) * 32767))),
-    idx: push(big ? m.I : Uint16Array.from(m.I)), nIdx: m.I.length, idx32: big,
-  };
-  if (ao) out.ao = push(Uint8Array.from(ao, (v) => Math.round(v * 255)));
-  return out;
-}
+/** Compresses a mesh into the output buffer (see meshData.mjs); `ao` (0..1 per vertex) is optional. */
+const emit = (m, ao) => encodeMesh(m, ao ?? null, push);
 
 /** The planes of a stone's convex hull, nearly coplanar ones merged. Flat [nx, ny, nz, d] with n·x = d. */
 function facetPlanes(P, I) {
@@ -154,7 +146,7 @@ function bakeOcclusion(meshes, occluders) {
   });
 }
 
-const out = { rings: [] };
+const out = { format: 2, rings: [] };
 for (const entry of config) {
   const file = resolve(dirname(configPath), entry.file);
   const doc = r.File3dm.fromByteArray(new Uint8Array(readFileSync(file)));
@@ -206,13 +198,13 @@ for (const entry of config) {
   const started = Date.now();
   const occlusion = bakeOcclusion(metal.map((i) => i.raw), [...metal.map((i) => i.raw), ...ring.items.filter((i) => i.kind === 'gem' && i.raw).map((i) => i.raw), ...placed]);
   console.log(`${entry.label}: ambient occlusion for ${metal.length} metal pieces in ${((Date.now() - started) / 1000).toFixed(1)} s`);
-  metal.forEach((it, k) => { it.mesh = emit(it.raw, occlusion[k]); });
+  for (const [k, it] of metal.entries()) it.mesh = await emit(it.raw, occlusion[k]);
   for (const it of ring.items) {
-    if (it.raw && !it.mesh) it.mesh = emit(it.raw);
+    if (it.raw && !it.mesh) it.mesh = await emit(it.raw);
     delete it.raw;
   }
   for (const d of Object.values(ring.defs)) {
-    if (d.raw) Object.assign(d, facetPlanes(d.raw.P, d.raw.I), { mesh: emit(d.raw) });
+    if (d.raw) Object.assign(d, facetPlanes(d.raw.P, d.raw.I), { mesh: await emit(d.raw) });
     else d.mesh = null;
     delete d.raw;
   }

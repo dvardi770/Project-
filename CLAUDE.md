@@ -20,7 +20,9 @@ for the layout, purchase flow and store setup.
   its DTOs match it in `apps/api/src/contract.ts`. `cache.ts` is the cache shared by API and worker.
 - `integrations/wordpress/jewelry-builder` — the WooCommerce plugin (PHP, WordPress coding style, tabs).
 - `apps/ring-lab` — prototype 3D configurator (plain ESM JavaScript, not typechecked): `.3dm` converter,
-  head/shank fit check, three.js viewer. Not wired into the API or widget. Never commit customer CAD files.
+  compact mesh format, head/shank fit check, three.js viewer with photo mode, catalogue renderer
+  (Playwright). Not wired into the API or widget. Never commit customer CAD files. The viewer is one HTML
+  file with its own copy of the mesh decoder in `src/meshData.mjs`; change both together.
 - `apps/dashboard` — Next.js (App Router) merchant admin: markup matrix, order fulfilment, billing
   (Shopify Billing API for Shopify stores, Stripe Subscriptions otherwise). Server code reads the
   database directly through `@jewelry/db`; client components must import `lib/markup-shared.ts`, never

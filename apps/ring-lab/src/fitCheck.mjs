@@ -156,15 +156,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const data = JSON.parse(readFileSync(`${dir}/rings.json`, 'utf8'));
   const raw = Buffer.from(readFileSync(`${dir}/rings.b64.txt`, 'utf8'), 'base64');
   const bin = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.length);
-  const piece = (m) => ({
-    positions: new Float32Array(bin, m.pos, m.nPos),
-    index: m.idx32 ? new Uint32Array(bin, m.idx, m.nIdx) : new Uint16Array(bin, m.idx, m.nIdx),
-  });
-  const rings = data.rings.map((ring) => ({
-    shankTop: ring.shankTop,
-    head: ring.items.filter((i) => i.part === 'head' && i.kind === 'metal' && i.mesh).map((i) => piece(i.mesh)),
-    shank: ring.items.filter((i) => i.part === 'shank' && i.kind === 'metal' && i.mesh).map((i) => piece(i.mesh)),
-  }));
+  const { decodeMesh } = await import('./meshData.mjs');
+  const piece = async (m) => { const d = await decodeMesh(m, bin); return { positions: d.positions, index: d.index }; };
+  const pieces = async (ring, part) => Promise.all(ring.items.filter((i) => i.part === part && i.kind === 'metal' && i.mesh).map((i) => piece(i.mesh)));
+  const rings = [];
+  for (const ring of data.rings) rings.push({ shankTop: ring.shankTop, head: await pieces(ring, 'head'), shank: await pieces(ring, 'shank') });
   const started = Date.now();
   const fit = checkAll(rings);
   for (const [key, f] of Object.entries(fit)) {

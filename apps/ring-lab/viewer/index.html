@@ -94,11 +94,11 @@ td { color: var(--ink); }
 
 <div class="wrap">
   <header>
-    <span class="eyebrow">Test with your two ring files · version 3</span>
+    <span class="eyebrow">Test with your two ring files · version 4</span>
     <h1>Mix heads and shanks from your own CAD files</h1>
-    <p class="lede">Your two rings, now lit like a jewellery photo studio, with light traced through every facet of each stone.
-    Let the ring turn, or drag it slowly, to see the stones change as the light moves. A fit check now stops heads and
-    shanks that don't fit from being combined.</p>
+    <p class="lede">Your two rings, lit like a jewellery photo studio, with light traced through every facet of each stone.
+    While you turn the ring it stays smooth; when you let go, it sharpens into a clean still image within a second or two.
+    A fit check stops heads and shanks that don't fit from being combined.</p>
   </header>
 
   <div class="layout">
@@ -153,7 +153,9 @@ td { color: var(--ink); }
       <h2>How it is drawn now</h2>
       <ul>
         <li><b>Metal</b> is lit by studio softboxes and uses the exact surface curves saved in your CAD files, so it reflects smoothly.</li>
-        <li><b>Stones</b> use the real facets from your files. Light is followed as it bends into the stone, bounces inside and comes back out.</li>
+        <li><b>Shading in crevices</b> is worked out in advance: under the halo, between prongs and inside the split shank the metal darkens, as it does in a photo.</li>
+        <li><b>Stones</b> use the real facets from your files. Light is followed as it bends into the stone, bounces inside and comes back out. Your cuts are all convex, so the exit facet is found exactly and cheaply.</li>
+        <li><b>Smooth and sharp:</b> while moving, quality adapts to the device so turning stays fluid; when still, 24 slightly shifted frames are averaged for clean facets and edges, with full rainbow fire.</li>
         <li><b>Each stone bends light by its real amount:</b> diamond 2.42, sapphire and ruby 1.77, emerald 1.58. That is why diamonds sparkle most.</li>
         <li><b>Colour deepens</b> where light travels further inside a stone, as in real gems.</li>
       </ul>
@@ -330,6 +332,21 @@ scene.add(root);
 
 // ─── Materials ─────────────────────────────────────────────────────────────
 const metalMat = new THREE.MeshPhysicalMaterial({ metalness: 1, roughness: 0.07, envMapIntensity: 1 });
+// Baked ambient occlusion (worked out per vertex by the converter) darkens the reflections in
+// crevices: under the halo, between prongs, inside the split shank.
+metalMat.onBeforeCompile = (shader) => {
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float ao;\nvarying float vAo;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAo = ao;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nvarying float vAo;')
+    .replace('#include <aomap_fragment>', `
+      float ambientOcclusion = clamp(vAo * vAo * 1.15, 0.0, 1.0);
+      reflectedLight.indirectDiffuse *= ambientOcclusion;
+      float dotNVao = saturate(dot(geometryNormal, geometryViewDir));
+      reflectedLight.indirectSpecular *= computeSpecularOcclusion(dotNVao, ambientOcclusion, material.roughness);`);
+};
+metalMat.customProgramCacheKey = () => 'metal-baked-ao';
 const headTint = new THREE.MeshStandardMaterial({ color: 0xc58b2b, metalness: 0.2, roughness: 0.5 });
 const shankTint = new THREE.MeshStandardMaterial({ color: 0x3f7fb5, metalness: 0.2, roughness: 0.5 });
 
@@ -360,13 +377,21 @@ const gemVertex = /* glsl */`
 const gemFragment = /* glsl */`
   precision highp isampler2D;
   precision highp usampler2D;
-  ${BVHShaderGLSL.common_functions}
-  ${BVHShaderGLSL.bvh_struct_definitions}
-  ${BVHShaderGLSL.bvh_ray_functions}
-  uniform BVH bvh;
+  #ifdef CONVEX
+    // Convex cuts (all standard cuts): the stone is the space inside its facet planes, so the
+    // facet a ray leaves through is simply the nearest plane ahead of it. Exact, and cheap.
+    uniform sampler2D planes;
+  #else
+    ${BVHShaderGLSL.common_functions}
+    ${BVHShaderGLSL.bvh_struct_definitions}
+    ${BVHShaderGLSL.bvh_ray_functions}
+    uniform BVH bvh;
+  #endif
   uniform samplerCube envMap;
   uniform float ior;
   uniform float dispersion;
+  uniform float fire;
+  uniform int bounces;
   uniform vec3 absorption;
   varying vec3 vLocalPos;
   varying vec3 vLocalCam;
@@ -381,24 +406,46 @@ const gemFragment = /* glsl */`
     return textureCube(envMap, w).rgb;
   }
 
+  #ifdef CONVEX
+  float leave(vec3 p, vec3 d, out vec3 n) {
+    float best = 1e6;
+    n = -d;
+    for (int i = 0; i < PLANES; i++) {
+      vec4 pl = texelFetch(planes, ivec2(i, 0), 0);
+      float nd = dot(pl.xyz, d);
+      if (nd > 1e-6) {
+        float t = (pl.w - dot(pl.xyz, p)) / nd;
+        if (t < best) { best = t; n = -pl.xyz; }
+      }
+    }
+    return max(best, 0.0);
+  }
+  #endif
+
   // Follows one ray of light through the stone and returns the light that leaves it.
   vec3 traceStone(vec3 pos, vec3 dir, float eta) {
     float travelled = 0.0;
     for (int i = 0; i < BOUNCES; i++) {
-      uvec4 faceIndices = uvec4(0u);
-      vec3 faceNormal = vec3(0.0, 0.0, 1.0);
-      vec3 barycoord = vec3(0.0);
-      float side = 1.0;
-      float dist = 0.0;
-      if (!bvhIntersectFirstHit(bvh, pos, dir, faceIndices, faceNormal, barycoord, side, dist)) break;
+      if (i >= bounces) break;
+      vec3 n;
+      float dist;
+      #ifdef CONVEX
+        dist = leave(pos, dir, n);
+      #else
+        uvec4 faceIndices = uvec4(0u);
+        vec3 faceNormal = vec3(0.0, 0.0, 1.0);
+        vec3 barycoord = vec3(0.0);
+        float side = 1.0;
+        if (!bvhIntersectFirstHit(bvh, pos, dir, faceIndices, faceNormal, barycoord, side, dist)) break;
+        n = normalize(faceNormal);
+        if (dot(n, dir) > 0.0) n = -n;
+      #endif
       travelled += dist;
       pos += dir * dist;
-      vec3 n = normalize(faceNormal);
-      if (dot(n, dir) > 0.0) n = -n;
       vec3 outDir = refract(dir, n, eta);
       if (dot(outDir, outDir) > 0.0) return studio(outDir) * exp(-absorption * (travelled * vScale + 2.0));
       dir = reflect(dir, n);
-      pos += n * 0.002;
+      pos += n * 0.0005;
     }
     return studio(dir) * exp(-absorption * (travelled * vScale + 2.0));
   }
@@ -413,7 +460,7 @@ const gemFragment = /* glsl */`
     vec3 reflected = studio(reflect(V, N));
     vec3 start = vLocalPos - N * 0.002;
     vec3 inside;
-    if (dispersion > 0.0005) {
+    if (fire > 0.5 && dispersion > 0.0005) {
       float iR = ior - dispersion, iB = ior + dispersion;
       inside.r = traceStone(start, refract(V, N, 1.0 / iR), iR).r;
       inside.g = traceStone(start, refract(V, N, 1.0 / ior), ior).g;
@@ -427,16 +474,21 @@ const gemFragment = /* glsl */`
   }`;
 
 const gemMaterials = [];
-function gemMaterial(bvhUniform, role) {
+function gemMaterial(assets, role) {
+  const defines = { BOUNCES: role === 'centre' ? 6 : 4 };
+  const uniforms = {
+    envMap: { value: cubeRT.texture },
+    ior: { value: 2.42 },
+    dispersion: { value: 0.03 },
+    fire: { value: 1 },
+    bounces: { value: defines.BOUNCES },
+    absorption: { value: new THREE.Vector3() },
+  };
+  if (assets.planes) { defines.CONVEX = ''; defines.PLANES = assets.planeCount; uniforms.planes = { value: assets.planes }; }
+  else uniforms.bvh = { value: assets.uniform };
   const m = new THREE.ShaderMaterial({
-    defines: { BOUNCES: role === 'centre' ? 5 : 4 },
-    uniforms: {
-      bvh: { value: bvhUniform },
-      envMap: { value: cubeRT.texture },
-      ior: { value: 2.42 },
-      dispersion: { value: 0.03 },
-      absorption: { value: new THREE.Vector3() },
-    },
+    defines,
+    uniforms,
     vertexShader: gemVertex,
     fragmentShader: gemFragment,
     side: THREE.DoubleSide,
@@ -457,13 +509,17 @@ function metalGeometry(m) {
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(bin, m.pos, m.nPos), 3));
   g.setAttribute('normal', new THREE.BufferAttribute(new Int16Array(bin, m.nrm, m.nPos), 3, true));
   g.setIndex(new THREE.BufferAttribute(indexArray(m), 1));
+  g.setAttribute('ao', m.ao !== undefined
+    ? new THREE.BufferAttribute(new Uint8Array(bin, m.ao, m.nPos / 3), 1, true)
+    : new THREE.BufferAttribute(new Uint8Array(m.nPos / 3).fill(255), 1, true));
   metalGeoms.set(m.pos, g);
   return g;
 }
 
 // A stone's facets, stretched to its real proportions, plus the search structure the ray tracer uses.
 const gemAssets = new Map();
-function stoneAssets(mesh, ry, rz) {
+function stoneAssets(def, ry, rz) {
+  const mesh = def.mesh;
   const key = `${mesh.pos}|${ry}|${rz}`;
   if (gemAssets.has(key)) return gemAssets.get(key);
   const pos = Float32Array.from(new Float32Array(bin, mesh.pos, mesh.nPos));
@@ -473,10 +529,26 @@ function stoneAssets(mesh, ry, rz) {
   indexed.setIndex(new THREE.BufferAttribute(Uint32Array.from(indexArray(mesh)), 1));
   const render = indexed.toNonIndexed();
   render.computeVertexNormals(); // one normal per facet
-  const bvh = new MeshBVH(indexed);
-  const uniform = new MeshBVHUniformStruct();
-  uniform.updateFrom(bvh);
-  const assets = { render, uniform };
+  let assets;
+  if (def.convex && def.planes?.length && !new URLSearchParams(location.search).has('bvh')) {
+    // Stretching the stone tilts its facet planes: n' = S^-1 n, renormalised.
+    const count = def.planes.length / 4;
+    const tex = new Float32Array(count * 4);
+    for (let i = 0; i < count; i++) {
+      const [nx, ny, nz, d] = def.planes.slice(i * 4, i * 4 + 4);
+      const v = new THREE.Vector3(nx, ny / ry, nz / rz);
+      const len = v.length();
+      v.divideScalar(len);
+      tex.set([v.x, v.y, v.z, d / len], i * 4);
+    }
+    const planes = new THREE.DataTexture(tex, count, 1, THREE.RGBAFormat, THREE.FloatType);
+    planes.needsUpdate = true;
+    assets = { render, planes, planeCount: count };
+  } else {
+    const uniform = new MeshBVHUniformStruct();
+    uniform.updateFrom(new MeshBVH(indexed));
+    assets = { render, uniform };
+  }
   gemAssets.set(key, assets);
   return assets;
 }
@@ -493,8 +565,8 @@ function buildPart(ring, part) {
       continue;
     }
     if (it.kind !== 'gem') continue;
-    const source = it.def ? ring.defs[it.def]?.mesh : it.mesh;
-    if (!source) continue;
+    const source = it.def ? ring.defs[it.def] : { mesh: it.mesh };
+    if (!source?.mesh) continue;
     const m = it.xform ? new THREE.Matrix4().set(...it.xform) : new THREE.Matrix4();
     // Light bends correctly only in an evenly scaled stone, so bake any stretch into the facets.
     const e = m.elements;
@@ -503,13 +575,13 @@ function buildPart(ring, part) {
     const rz = +(Math.hypot(e[8], e[9], e[10]) / sx).toFixed(3);
     m.multiply(new THREE.Matrix4().makeScale(1, 1 / ry, 1 / rz));
     const role = it.role === 'centre' ? 'centre' : 'accent';
-    const key = `${source.pos}|${ry}|${rz}|${role}`;
+    const key = `${source.mesh.pos}|${ry}|${rz}|${role}`;
     if (!stones.has(key)) stones.set(key, { source, ry, rz, role, matrices: [] });
     stones.get(key).matrices.push(m);
   }
   for (const { source, ry, rz, role, matrices } of stones.values()) {
-    const { render, uniform } = stoneAssets(source, ry, rz);
-    const im = new THREE.InstancedMesh(render, gemMaterial(uniform, role), matrices.length);
+    const assets = stoneAssets(source, ry, rz);
+    const im = new THREE.InstancedMesh(assets.render, gemMaterial(assets, role), matrices.length);
     matrices.forEach((mx, i) => im.setMatrixAt(i, mx));
     im.userData = { kind: 'gem', part, role };
     group.add(im);
@@ -726,38 +798,145 @@ data.rings.forEach((r, i) => {
   found.append(li);
 });
 
-// ─── Render loop ───────────────────────────────────────────────────────────
+// ─── Rendering: fast while moving, sharpening while still ──────────────────
+// While the ring moves, frames are drawn at a resolution and quality the device can keep up
+// with. Once it stops, the same view is drawn again and again with tiny sub-pixel shifts and
+// all effects on, and the frames are averaged: edges and facets come out clean and sharp.
+const canFloat = renderer.extensions.has('EXT_color_buffer_half_float') || renderer.extensions.has('EXT_color_buffer_float');
+const bufferType = canFloat ? THREE.HalfFloatType : THREE.UnsignedByteType;
+const frameRT = new THREE.WebGLRenderTarget(1, 1, { type: bufferType, samples: 4 });
+let accumRead = new THREE.WebGLRenderTarget(1, 1, { type: bufferType });
+let accumWrite = new THREE.WebGLRenderTarget(1, 1, { type: bufferType });
+const quadVertex = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const blendMat = new THREE.ShaderMaterial({
+  uniforms: { current: { value: null }, previous: { value: null }, weight: { value: 1 } },
+  vertexShader: quadVertex,
+  fragmentShader: `uniform sampler2D current; uniform sampler2D previous; uniform float weight; varying vec2 vUv;
+    void main() { gl_FragColor = mix(texture2D(previous, vUv), texture2D(current, vUv), weight); }`,
+  depthTest: false, depthWrite: false, toneMapped: false,
+});
+const presentMat = new THREE.ShaderMaterial({
+  uniforms: { image: { value: null } },
+  vertexShader: quadVertex,
+  fragmentShader: `uniform sampler2D image; varying vec2 vUv;
+    void main() { gl_FragColor = texture2D(image, vUv);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  depthTest: false, depthWrite: false,
+});
+const screenQuad = new FullScreenQuad();
+
+// Quality steps used while moving; the last one is also what the still image uses.
+const LEVELS = [
+  { scale: 0.55, fire: 0, bounces: 3 },
+  { scale: 0.75, fire: 0, bounces: 4 },
+  { scale: 1.0, fire: 0, bounces: 5 },
+  { scale: 1.0, fire: 1, bounces: 6 },
+];
+const STILL = LEVELS[LEVELS.length - 1];
+const STILL_SAMPLES = 24;
+let level = 2, samples = 0, lastMove = -1e9, frameTimes = [], lastTime = 0;
+let fullW = 1, fullH = 1, rtScale = 0;
+
 function resize() {
   const { clientWidth: w, clientHeight: h } = stageEl;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  const pr = renderer.getPixelRatio();
+  fullW = Math.max(1, Math.round(w * pr));
+  fullH = Math.max(1, Math.round(h * pr));
+  rtScale = 0;
   needsRender = true;
 }
+function sizeTargets(scale) {
+  if (scale === rtScale) return;
+  rtScale = scale;
+  const w = Math.max(1, Math.round(fullW * scale)), h = Math.max(1, Math.round(fullH * scale));
+  for (const rt of [frameRT, accumRead, accumWrite]) rt.setSize(w, h);
+}
+function setStoneQuality(q, bouncesCap) {
+  for (const m of gemMaterials) {
+    m.uniforms.fire.value = q.fire;
+    m.uniforms.bounces.value = Math.min(bouncesCap ?? q.bounces, m.defines.BOUNCES);
+  }
+}
+// Sub-pixel offsets that spread evenly over a pixel (Halton sequence).
+function halton(i, b) { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; }
+
+function present(texture) {
+  presentMat.uniforms.image.value = texture;
+  screenQuad.material = presentMat;
+  renderer.setRenderTarget(null);
+  screenQuad.render(renderer);
+}
+
 new ResizeObserver(resize).observe(stageEl);
 resize();
 apply();
-controls.addEventListener('change', () => { needsRender = true; });
+controls.addEventListener('change', () => { lastMove = performance.now(); samples = 0; });
+
 // Plain stones for devices whose graphics chip cannot run the ray tracer.
 function useSimpleStones() {
   const simple = new THREE.MeshPhysicalMaterial({ metalness: 0, roughness: 0, transmission: 1, thickness: 1, ior: 2.0, flatShading: true });
   for (const p of parts) for (const g of [p.head, p.shank]) g.traverse((o) => { if (o.userData.kind === 'gem') o.material = simple; });
+  gemMaterials.length = 0;
   needsRender = true;
 }
-let first = true, slowFrames = 0, lastFrame = 0, lowered = false;
+
+// For automated checks: how far the still image has got.
+window.ringViewer = { get samples() { return samples; }, get level() { return level; }, stillSamples: STILL_SAMPLES };
+
+let first = true;
 renderer.setAnimationLoop((time) => {
   controls.update();
   if (stoneShaderFailed) { stoneShaderFailed = false; useSimpleStones(); }
-  if (!needsRender) { lastFrame = 0; return; }
-  needsRender = false;
-  // If frames take too long, draw at a lower resolution rather than stutter.
-  if (lastFrame && !lowered && time - lastFrame > 70 && ++slowFrames > 30) {
-    lowered = true;
-    renderer.setPixelRatio(1);
-    resize();
+  if (needsRender) { needsRender = false; samples = 0; lastMove = time; }
+  const moving = controls.autoRotate || time - lastMove < 150;
+
+  if (moving) {
+    // Keep motion smooth: step quality down when frames are slow, up when there is room.
+    if (lastTime) {
+      frameTimes.push(time - lastTime);
+      if (frameTimes.length >= 20) {
+        const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+        if (avg > 26 && level > 0) level--;
+        else if (avg < 14 && level < LEVELS.length - 1) level++;
+        frameTimes = [];
+      }
+    }
+    lastTime = time;
+    const q = LEVELS[level];
+    sizeTargets(q.scale);
+    setStoneQuality(q);
+    camera.clearViewOffset();
+    renderer.setRenderTarget(frameRT);
+    renderer.render(scene, camera);
+    present(frameRT.texture);
+    samples = 0;
+  } else {
+    lastTime = 0;
+    frameTimes = [];
+    if (samples >= STILL_SAMPLES) return; // the still image is finished; draw nothing more
+    sizeTargets(STILL.scale);
+    setStoneQuality(STILL);
+    const w = frameRT.width, h = frameRT.height;
+    if (samples === 0) camera.clearViewOffset();
+    else camera.setViewOffset(w, h, halton(samples, 2) - 0.5, halton(samples, 3) - 0.5, w, h);
+    renderer.setRenderTarget(frameRT);
+    renderer.render(scene, camera);
+    camera.clearViewOffset();
+    blendMat.uniforms.current.value = frameRT.texture;
+    blendMat.uniforms.previous.value = accumRead.texture;
+    blendMat.uniforms.weight.value = 1 / (samples + 1);
+    screenQuad.material = blendMat;
+    renderer.setRenderTarget(accumWrite);
+    screenQuad.render(renderer);
+    [accumRead, accumWrite] = [accumWrite, accumRead];
+    present(accumRead.texture);
+    samples++;
   }
-  lastFrame = time;
-  renderer.render(scene, camera);
   if (first) { first = false; statusEl.remove(); }
 });
 </script>

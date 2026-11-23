@@ -9,11 +9,20 @@
  *
  * Output (in <out-dir>): rings.json (parts, stones, placements), rings.b64.txt (vertex data,
  * base64 because the artifact host serves no binary types) and index.html (the viewer).
+ *
+ * Two things are worked out here once, so the viewer does not have to:
+ * - Ambient occlusion for every metal vertex: how much of the surroundings nearby metal and
+ *   stones hide from it. Crevices under a halo or between prongs come out darker, as in a photo.
+ * - Each stone cut's flat facets (the planes of its convex hull). The viewer traces light
+ *   against these planes, which is exact for convex cuts and cheaper than searching triangles.
  */
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import rhino3dm from 'rhino3dm';
+import * as THREE from 'three';
+import { ConvexHull } from 'three/examples/jsm/math/ConvexHull.js';
+import { MeshBVH } from 'three-mesh-bvh';
 
 const [configPath, outDir] = process.argv.slice(2);
 if (!configPath || !outDir) {
@@ -37,7 +46,7 @@ function push(arr) {
 }
 
 /** Merges the render meshes saved in the file for one object. Rhino stores these with the CAD's exact normals. */
-function meshOf(g) {
+function rawMesh(g) {
   const meshes = [];
   const type = g.constructor.name;
   if (type === 'Brep') {
@@ -58,12 +67,91 @@ function meshOf(g) {
     for (const k of ix) I.push(k + base);
   }
   if (!P.length) return null;
-  const big = P.length / 3 > 65535;
-  return {
-    pos: push(new Float32Array(P)), nPos: P.length,
-    nrm: push(Int16Array.from(N, (v) => Math.round(Math.max(-1, Math.min(1, v)) * 32767))),
-    idx: push(big ? new Uint32Array(I) : new Uint16Array(I)), nIdx: I.length, idx32: big,
+  return { P: new Float32Array(P), N: new Float32Array(N), I: new Uint32Array(I) };
+}
+
+/** Writes a mesh into the output buffer; `ao` (0..1 per vertex) is optional. */
+function emit(m, ao) {
+  const big = m.P.length / 3 > 65535;
+  const out = {
+    pos: push(m.P), nPos: m.P.length,
+    nrm: push(Int16Array.from(m.N, (v) => Math.round(Math.max(-1, Math.min(1, v)) * 32767))),
+    idx: push(big ? m.I : Uint16Array.from(m.I)), nIdx: m.I.length, idx32: big,
   };
+  if (ao) out.ao = push(Uint8Array.from(ao, (v) => Math.round(v * 255)));
+  return out;
+}
+
+/** The planes of a stone's convex hull, nearly coplanar ones merged. Flat [nx, ny, nz, d] with n·x = d. */
+function facetPlanes(P, I) {
+  const pts = [];
+  for (let i = 0; i < P.length; i += 3) pts.push(new THREE.Vector3(P[i], P[i + 1], P[i + 2]));
+  const hull = new ConvexHull().setFromPoints(pts);
+  const planes = [];
+  let hullVolume = 0;
+  for (const f of hull.faces) {
+    const n = f.normal.clone();
+    const d = n.dot(f.midpoint);
+    const same = planes.find((q) => q.n.dot(n) > 0.995 && Math.abs(q.d - d) < 0.05);
+    if (!same) planes.push({ n, d });
+    let e = f.edge;
+    const a = e.head().point; e = e.next;
+    const b = e.head().point; e = e.next;
+    hullVolume += a.dot(b.clone().cross(e.head().point)) / 6;
+  }
+  let meshVolume = 0;
+  const v = (k) => new THREE.Vector3(P[k * 3], P[k * 3 + 1], P[k * 3 + 2]);
+  for (let t = 0; t < I.length; t += 3) meshVolume += v(I[t]).dot(v(I[t + 1]).cross(v(I[t + 2]))) / 6;
+  // A cut is convex when it fills its hull. Heart shapes, for example, do not.
+  const convex = Math.abs(meshVolume) / Math.abs(hullVolume) > 0.985;
+  return { convex, planes: planes.flatMap((q) => [...q.n.toArray(), q.d].map((x) => Math.round(x * 1e5) / 1e5)) };
+}
+
+// Ambient occlusion: rays per vertex and how far nearby geometry counts (millimetres).
+const AO_RAYS = 24, AO_RANGE = 1.6;
+const hemisphere = Array.from({ length: AO_RAYS }, (_, i) => {
+  // Cosine-weighted, evenly spread directions around +Z (golden-angle spiral).
+  const u = (i + 0.5) / AO_RAYS, phi = i * 2.399963;
+  const r = Math.sqrt(u);
+  return new THREE.Vector3(r * Math.cos(phi), r * Math.sin(phi), Math.sqrt(1 - u));
+});
+function bakeOcclusion(meshes, occluders) {
+  const geo = new THREE.BufferGeometry();
+  let count = 0;
+  for (const o of occluders) count += o.P.length;
+  const pos = new Float32Array(count);
+  const idx = [];
+  let at = 0;
+  for (const o of occluders) {
+    const base = at / 3;
+    pos.set(o.P, at);
+    at += o.P.length;
+    for (const k of o.I) idx.push(k + base);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  const bvh = new MeshBVH(geo);
+  const ray = new THREE.Ray(), n = new THREE.Vector3(), t1 = new THREE.Vector3(), t2 = new THREE.Vector3(), q = new THREE.Quaternion(), z = new THREE.Vector3(0, 0, 1);
+  return meshes.map((m) => {
+    const ao = new Float32Array(m.P.length / 3);
+    for (let i = 0; i < ao.length; i++) {
+      n.set(m.N[i * 3], m.N[i * 3 + 1], m.N[i * 3 + 2]);
+      if (n.lengthSq() < 0.5) { ao[i] = 1; continue; }
+      n.normalize();
+      q.setFromUnitVectors(z, n);
+      const spin = (i * 0.618034) % 1 * Math.PI * 2; // vary the pattern per vertex to avoid banding
+      let hidden = 0;
+      for (const h of hemisphere) {
+        t1.copy(h).applyAxisAngle(z, spin).applyQuaternion(q);
+        ray.origin.set(m.P[i * 3], m.P[i * 3 + 1], m.P[i * 3 + 2]).addScaledVector(n, 0.01);
+        ray.direction.copy(t1);
+        const hit = bvh.raycastFirst(ray, THREE.DoubleSide, 0, AO_RANGE);
+        if (hit) hidden += 1 - hit.distance / AO_RANGE;
+      }
+      ao[i] = 1 - hidden / AO_RAYS;
+    }
+    return ao;
+  });
 }
 
 const out = { rings: [] };
@@ -82,7 +170,8 @@ for (const entry of config) {
   for (let i = 0; i < defs.count; i++) {
     const d = defs.get(i);
     const first = byId[d.getObjectIds()[0]];
-    ring.defs[d.id] = { name: d.name, mesh: first ? meshOf(first.geometry()) : null };
+    const raw = first ? rawMesh(first.geometry()) : null;
+    ring.defs[d.id] = { name: d.name, raw };
   }
 
   // MatrixGold keeps metal on "Metal" layers and stones on "Gem" layers. Hidden layers are design
@@ -101,8 +190,31 @@ for (const entry of config) {
       c: bb.min.map((v, k) => (v + bb.max[k]) / 2), size: bb.max.map((v, k) => v - bb.min[k]), min: bb.min, max: bb.max,
     };
     if (g.constructor.name === 'InstanceReference') { item.def = g.parentIdefId; item.xform = Array.from(g.xform.toFloatArray(true)); }
-    else { item.mesh = meshOf(g); if (!item.mesh) continue; }
+    else { item.raw = rawMesh(g); if (!item.raw) continue; }
     ring.items.push(item);
+  }
+
+  // Occlusion is baked with the ring as designed: all of its metal and every placed stone.
+  const placed = ring.items.filter((i) => i.def && ring.defs[i.def]?.raw).map((i) => {
+    const src = ring.defs[i.def].raw;
+    const m = new THREE.Matrix4().set(...i.xform);
+    const P = Float32Array.from(src.P);
+    new THREE.BufferAttribute(P, 3).applyMatrix4(m);
+    return { P, I: src.I };
+  });
+  const metal = ring.items.filter((i) => i.kind === 'metal' && i.raw);
+  const started = Date.now();
+  const occlusion = bakeOcclusion(metal.map((i) => i.raw), [...metal.map((i) => i.raw), ...ring.items.filter((i) => i.kind === 'gem' && i.raw).map((i) => i.raw), ...placed]);
+  console.log(`${entry.label}: ambient occlusion for ${metal.length} metal pieces in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+  metal.forEach((it, k) => { it.mesh = emit(it.raw, occlusion[k]); });
+  for (const it of ring.items) {
+    if (it.raw && !it.mesh) it.mesh = emit(it.raw);
+    delete it.raw;
+  }
+  for (const d of Object.values(ring.defs)) {
+    if (d.raw) Object.assign(d, facetPlanes(d.raw.P, d.raw.I), { mesh: emit(d.raw) });
+    else d.mesh = null;
+    delete d.raw;
   }
 
   // Head or shank: the centre stone is the largest stone. Pieces that are not tall (not part of the

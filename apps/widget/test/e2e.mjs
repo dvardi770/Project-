@@ -48,7 +48,7 @@ const RENDER_MANIFEST = {
   shapes: { round: { label: 'Round' } },
   combos: [{
     id: 'round-halo', head: 1, shank: 1, headLabel: 'Halo', shankLabel: 'Band', designedShape: 'round',
-    variants: { 'white.round.white': { metal: 'white', shape: 'round', colour: 'white', dir: 'round-halo/white-round-white', views: ['threequarter', 'front', 'side', 'top'], video: 'spin.mp4' } },
+    variants: { 'white.round.white': { metal: 'white', shape: 'round', colour: 'white', dir: 'round-halo/white-round-white', views: ['threequarter', 'front', 'side', 'top'], video: 'spin.mp4', poster: 'spin-poster.webp' } },
   }],
 };
 
@@ -399,7 +399,7 @@ await scenario('review shows rendered photos from four angles, a 360° video and
   await hero.locator(`img[src="${base}/front.webp"]`).waitFor();
   await w(page).getByRole('button', { name: '360° video' }).click();
   assert.equal(await hero.locator('video').getAttribute('src'), `${base}/spin.mp4`);
-  assert.equal(await hero.locator('video').getAttribute('poster'), `${base}/threequarter.webp`);
+  assert.equal(await hero.locator('video').getAttribute('poster'), `${base}/spin-poster.webp`);
   await w(page).getByRole('button', { name: 'Live 3D' }).click();
   const src = await hero.locator('iframe').getAttribute('src');
   assert.match(src, /^https:\/\/renders\.ringbuilder\.test\/sample\/index\.html\?embed&/);

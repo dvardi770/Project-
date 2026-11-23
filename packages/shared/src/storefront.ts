@@ -65,8 +65,11 @@ export interface RenderManifest {
     headLabel: string;
     shankLabel: string;
     designedShape: string;
-    /** Keyed `${metal}.${shape}.${colour}`. Files: `${baseUrl}/media/${dir}/${view}.webp`, `${view}-half.webp`, and `video`. */
-    variants: Record<string, { metal: string; shape: string; colour: string; dir: string; views: string[]; video: string | null }>;
+    /**
+     * Keyed `${metal}.${shape}.${colour}`. Files: `${baseUrl}/media/${dir}/${view}.webp` and `${view}-half.webp`,
+     * `video` (the ring lying down, turning once) and `poster` (its first frame).
+     */
+    variants: Record<string, { metal: string; shape: string; colour: string; dir: string; views: string[]; video: string | null; poster?: string | null }>;
   }[];
 }
 

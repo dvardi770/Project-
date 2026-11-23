@@ -126,7 +126,7 @@ legend b { color: var(--ink); text-transform: none; letter-spacing: 0; font-weig
       <ul class="facts">
         <li><b>Views</b><span>Angled, front, side and top, plus a 360° turn and live 3D</span></li>
         <li><b>Made from</b><span id="madeFrom"></span></li>
-        <li><b>Download size</b><span id="weight">Photos about 50–120 KB each; the video loads only when you open it</span></li>
+        <li><b>Download size</b><span id="weight">Photos are small ready-made files; the video loads only when you open it</span></li>
       </ul>
     </section>
   </div>
@@ -295,7 +295,7 @@ function showVideo(v) {
   video.muted = true; video.loop = true; video.autoplay = true; video.playsInline = true;
   video.setAttribute('playsinline', '');
   video.preload = 'auto';
-  video.poster = url(v, 'threequarter.webp');
+  video.poster = url(v, v.poster ?? 'threequarter.webp');
   video.src = url(v, v.video);
   video.setAttribute('aria-label', '360° view of the ring');
   setStage(video);
@@ -334,7 +334,7 @@ function renderThumbs(v) {
   for (const view of manifest.views) {
     add(view.id, `${view.label} view`, v ? `<img src="${url(v, `${view.id}-half.webp`)}" alt="" loading="lazy" decoding="async">` : `<span>${view.label}</span>`, !v);
   }
-  add('360', '360° video', v?.video ? `<img src="${url(v, 'threequarter-half.webp')}" alt="" loading="lazy"><span class="tag">360°</span>` : '<span>360°</span>', !v?.video);
+  add('360', '360° video', v?.video ? `<img src="${url(v, v.poster ?? 'threequarter-half.webp')}" alt="" loading="lazy"><span class="tag">360°</span>` : '<span>360°</span>', !v?.video);
   add('3d', 'Live 3D', '<span>3D</span>', false);
 }
 

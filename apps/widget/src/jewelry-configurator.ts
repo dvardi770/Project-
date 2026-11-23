@@ -823,7 +823,7 @@ export class JewelryConfigurator extends LitElement {
     if (view === '3d') {
       hero = html`<iframe src=${r.viewer} title="Live 3D view of the ${name}" loading="lazy" allow="fullscreen" referrerpolicy="no-referrer"></iframe>`;
     } else if (view === '360' && r.video) {
-      hero = html`<video src="${r.base}/${r.video}" poster="${r.base}/threequarter.webp" autoplay loop muted playsinline preload="auto" aria-label="360° view of the ${describe}"></video>`;
+      hero = html`<video src="${r.base}/${r.video}" poster="${r.base}/${r.poster}" autoplay loop muted playsinline preload="auto" aria-label="360° view of the ${describe}"></video>`;
     } else {
       const shown = r.views.find((x) => x.id === view) ?? r.views[0]!;
       hero = html`<img
@@ -839,7 +839,7 @@ export class JewelryConfigurator extends LitElement {
         <div class="hero rendered">${hero}</div>
         <div class="render-thumbs" role="group" aria-label="Views">
           ${r.views.map((x) => thumb(x.id, `${x.label} view`, html`<img src="${r.base}/${x.id}-half.webp" alt="" loading="lazy" decoding="async" />`))}
-          ${r.video ? thumb('360', '360° video', html`<span>360°</span>`) : nothing}
+          ${r.video ? thumb('360', '360° video', html`<img src="${r.base}/${r.poster}" alt="" loading="lazy" decoding="async" /><span class="tag">360°</span>`) : nothing}
           ${thumb('3d', 'Live 3D', html`<span>3D</span>`)}
         </div>
         <p class="caption">

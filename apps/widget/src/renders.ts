@@ -34,6 +34,8 @@ export interface RenderedRing {
   base: string;
   views: { id: string; label: string }[];
   video: string | null;
+  /** First frame of the video, shown while it loads. */
+  poster: string;
   /** Live 3D viewer for the same choices. */
   viewer: string;
   /** Shape the photos show, and whether it is the customer's diamond's shape. */
@@ -73,6 +75,7 @@ export function pickRendered(
     base: `${set.baseUrl}/media/${variant.dir}`,
     views: manifest.views.filter((v) => variant.views.includes(v.id)),
     video: variant.video,
+    poster: variant.poster ?? 'threequarter.webp',
     viewer: `${set.viewerUrl}?embed&${query}`,
     shape: variant.shape,
     shapeLabel: manifest.shapes[variant.shape]?.label ?? variant.shape,

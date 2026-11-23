@@ -43,18 +43,32 @@ in the main README).
     prongs differently, so this shows the stone, not a production head.
   - **Fancy colours**: yellow, pink and blue diamonds, besides sapphire, ruby and emerald.
   - **White product studio** (`studio: 'white'`): the ring and its shadow are laid over pure
-    white after tone mapping, and the metal reflects a bright white sweep with dark flags.
-  - **Views and turntable**: angled, front, side and top, framed automatically; the turntable
-    turns the ring under fixed lights, as on a photographer's turntable.
+    white after tone mapping. The metal is lit like a light tent: bright softboxes over a
+    mid-grey surround and a bright table, with dark-grey cards (never black) for edge lines, so
+    no turn of the ring shows black metal. Stones get their own darker, high-contrast lighting.
+  - **Stones**: at each facet part of the light leaves and part reflects back inside (Fresnel),
+    beyond the critical angle all of it, and the reflected part keeps going: that is the
+    brilliance. Accent stones get softened fire, since a camera blends their few pixels.
+  - **Finished images** average sub-pixel-shifted samples. After the first, each sample traces
+    one of red, green or blue through the stones at a slightly varied index of refraction (fire
+    across the spectrum at a third of the cost). `aperture` adds a little depth of field (the
+    camera moves within the lens opening while the focus plane stays put) and `glare` a soft
+    glow around the brightest sparkles. Stones draw only their front faces (mirrored placements
+    get mirrored copies), which nearly halved render time.
+  - **Views and pose**: angled, front, side and top, fitted to the ring's own surface points;
+    `pose: 'flat'` lays the ring on its side as it would rest on a table (touching with band and
+    head), and the `turntable` view films it from about 32° as it turns under fixed lights.
   - **Embed mode** (`index.html?embed&studio=white&head=&shank=&metal=&stone=&shape=&rotate=1`):
     only the stage, for the ring builder and the render studio page. Pages that frame it can
     change choices with `postMessage({ type: 'ring-viewer:set', options })`.
   - `window.ringViewer` lets scripts set a configuration (`show`, `prepare`), render a still
     right away (`renderNow`), path trace it (`photo`) and capture it (`capture`).
 - **Render studio** (`src/renderMedia.mjs`): for every fitting head and shank, in each metal,
-  shape and colour, four photos (WebP, full and half size) and a 360° turntable (H.264 MP4 with
-  `+faststart`, no audio, a seamless loop), plus `media/manifest.json`. Photos are path traced
-  by default (`--image-quality photo`). Needs ffmpeg. Finished variants are skipped on a re-run.
+  shape and colour, four photos of the ring standing (WebP, 1200 px and half size) and a 360°
+  turntable of it lying down (720 px, 180 frames at 30 fps, H.264 MP4 at CRF 18 with
+  `+faststart`, no audio, a seamless loop, plus its first frame as a poster), and
+  `media/manifest.json`. Photos are also path traced by default (`--image-quality photo`).
+  Variants render most-wanted first; finished ones are skipped on a re-run. Needs ffmpeg.
 - **Render studio page** (`viewer/gallery.html`): a product page with the photos, thumbnails
   for the four angles, the 360° video and live 3D, and choices for setting, metal, shape and
   colour. Combinations not yet rendered are shown in live 3D.
@@ -88,10 +102,11 @@ collection name and set the setting's `renderKey` to `"<collection>/<combo id fr
 
 ## Speed
 
-Measured on the build machine, which has no GPU (Chromium's software renderer): a 1000 px
-still with 16 sub-pixel samples takes about 10 s, a 540 px turntable frame about 1 s, so one
-variant (four photos and a 96-frame video) about 2.5 minutes. A machine with a GPU should be many
-times faster; pass Chromium flags that enable it through `RING_LAB_CHROMIUM_ARGS`.
+Measured on the build machine, which has no GPU (Chromium's software renderer, 4 cores): a
+1200 px photo with 25 samples takes about 10 s, a 720 px turntable frame with 13 samples about
+2.4 s, so one variant (four photos and a 180-frame video) about 8 minutes, most of it the video.
+The stones are most of the cost (the metal alone is about a fifth). A machine with a GPU should
+be many times faster; pass Chromium flags that enable it through `RING_LAB_CHROMIUM_ARGS`.
 
 The catalogue renderer serves the viewer's libraries from `node_modules`, so it needs no
 internet access. It needs Playwright's Chromium (`npx playwright install chromium` on a new

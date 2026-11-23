@@ -779,6 +779,20 @@ export const styles = css`
     object-fit: contain;
     display: block;
   }
+  .render-thumb {
+    position: relative;
+  }
+  .render-thumb .tag {
+    position: absolute;
+    left: 50%;
+    bottom: 4px;
+    transform: translateX(-50%);
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid #e6e3de;
+    font-size: 0.625rem;
+  }
   .render-thumb[aria-pressed='true'] {
     border-color: var(--_gold);
     box-shadow: 0 0 0 1px var(--_gold);

@@ -942,6 +942,8 @@ function present(texture, photoTexture = null) {
 const PHOTO_SAMPLES = 240;
 const photoBtn = document.getElementById('photo');
 let photo = null;
+// One path tracer for the page, given a new scene for each photo. (Its dispose() fails in 0.0.23.)
+let tracer = null;
 
 function setPhotoButton() {
   const busy = !!photo;
@@ -953,7 +955,7 @@ function setPhotoButton() {
 }
 function stopPhoto() {
   if (!photo) return;
-  photo.tracer?.dispose();
+  photo.tracer?.reset();
   for (const g of photo.geometries ?? []) g.dispose();
   for (const w of photo.waiters) w(null);
   photo = null;
@@ -1001,14 +1003,16 @@ async function startPhoto(target = PHOTO_SAMPLES) {
   }
   photoScene.updateMatrixWorld(true);
 
-  const tracer = new WebGLPathTracer(renderer);
-  tracer.tiles.set(1, 1);
-  tracer.renderToCanvas = false;
-  tracer.rasterizeScene = false;
-  tracer.minSamples = 1;
-  tracer.renderDelay = 0;
-  tracer.fadeDuration = 0;
-  tracer.bounces = 12;
+  if (!tracer) {
+    tracer = new WebGLPathTracer(renderer);
+    tracer.tiles.set(1, 1);
+    tracer.renderToCanvas = false;
+    tracer.rasterizeScene = false;
+    tracer.minSamples = 1;
+    tracer.renderDelay = 0;
+    tracer.fadeDuration = 0;
+    tracer.bounces = 12;
+  }
   tracer.renderScale = Math.min(1, 1.5 / renderer.getPixelRatio());
   camera.clearViewOffset();
   tracer.setScene(photoScene, camera);

@@ -43,6 +43,10 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   │   ├── fulfillment.ts      # order list, release to the foundry
 │   │   │   └── session.ts          # signed session cookie
 │   │   └── test/                   # database-backed tests + browser test
+│   ├── ring-lab/               # prototype: 3D configurator from .3dm CAD files (see its README)
+│   │   ├── src/convert.mjs         # .3dm -> head/shank meshes for the viewer
+│   │   ├── src/fitCheck.mjs        # which heads fit which shanks
+│   │   └── viewer/index.html       # three.js viewer, ray-traced stones
 │   └── widget/                 # embeddable ring builder (Lit web component)
 │       ├── src/
 │       │   ├── jewelry-configurator.ts   # <jewelry-configurator>: 3-step wizard in a shadow root

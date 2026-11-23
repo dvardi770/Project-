@@ -1,0 +1,16 @@
+{
+  "name": "@jewelry/ring-lab",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Prototype: 3D ring configurator built from Rhino/MatrixGold files, with ray-traced stones and an automatic fit check.",
+  "scripts": {
+    "convert": "node src/convert.mjs",
+    "fit-check": "node src/fitCheck.mjs"
+  },
+  "dependencies": {
+    "rhino3dm": "8.35.0",
+    "three": "0.170.0",
+    "three-mesh-bvh": "0.9.17"
+  }
+}

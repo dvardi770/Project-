@@ -1215,7 +1215,11 @@ new ResizeObserver(resize).observe(stageEl);
 resize();
 applyStudio();
 apply();
-if (params.get('view')) setView(params.get('view'));
+// Embedded, the ring is framed to the frame's size (again on resize) until the shopper moves it.
+let framedView = params.get('view') ?? (embed ? 'threequarter' : null);
+if (framedView) setView(framedView);
+controls.addEventListener('start', () => { framedView = null; });
+new ResizeObserver(() => { if (framedView) setView(framedView); }).observe(stageEl);
 controls.addEventListener('change', () => { lastMove = performance.now(); samples = 0; stopPhoto(); });
 
 /** Changes choices without reloading; used by the API below and by pages that frame this viewer. */

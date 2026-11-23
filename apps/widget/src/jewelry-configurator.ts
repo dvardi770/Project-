@@ -27,6 +27,8 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { ApiError, ConfiguratorApi, type Diamond, type Money, type Setting, type SettingVariant } from './api';
 import { addToShopifyCart, addToWooCommerceCart, detectPlatform, type StorefrontPlatform } from './cart';
 import { illustrationDefs, ringIllustration, stoneIcon } from './illustrations';
+import { loadRenderManifest, pickRendered, type RenderedRing } from './renders';
+import type { RenderManifest } from '@jewelry/shared/storefront';
 import { styles } from './styles';
 
 // ─── Vocabulary ──────────────────────────────────────────────────────────────
@@ -81,11 +83,17 @@ const metalLabel = (metal: string) => {
 const swatch = (metal: string) =>
   SWATCH[Object.keys(SWATCH).find((k) => metal.startsWith(k)) ?? ''] ?? 'linear-gradient(135deg,#eee,#bbb)';
 
-/** Only https URLs are ever placed in src/href: catalogue data is not trusted markup. */
+/**
+ * Only https URLs, or URLs on the storefront API's own origin (which serves rendered photos and
+ * may be plain http during development), are ever placed in src/href: catalogue data is not
+ * trusted markup.
+ */
+const trustedOrigins = new Set<string>();
 const safeUrl = (url: string | null | undefined): string | null => {
   if (!url) return null;
   try {
-    return new URL(url).protocol === 'https:' ? url : null;
+    const u = new URL(url);
+    return u.protocol === 'https:' || (u.protocol === 'http:' && trustedOrigins.has(u.origin)) ? url : null;
   } catch {
     return null;
   }
@@ -145,6 +153,9 @@ export class JewelryConfigurator extends LitElement {
   @state() private ringSize = 6;
   @state() private engraving = '';
   @state() private show360 = false;
+  /** Rendered photos for the chosen setting, and which view of them is showing. */
+  @state() private renderManifest: RenderManifest | null = null;
+  @state() private renderView = 'threequarter';
   @state() private cart: CartState = { phase: 'idle' };
   /** The chosen diamond sold while the shopper was deciding. */
   @state() private diamondGone = false;
@@ -168,6 +179,11 @@ export class JewelryConfigurator extends LitElement {
 
   protected willUpdate(changed: PropertyValues<this>): void {
     if (changed.has('apiBase') || changed.has('apiKey')) {
+      try {
+        trustedOrigins.add(new URL(this.apiBase).origin);
+      } catch {
+        // a proxy path such as "/apps/ring-builder": same origin as the page
+      }
       this.api = this.configured ? new ConfiguratorApi(this.apiBase, this.apiKey) : null;
       if (this.api) void this.loadSettings();
     }
@@ -299,6 +315,13 @@ export class JewelryConfigurator extends LitElement {
     this.step = step;
     this.cart = { phase: 'idle' };
     this.show360 = false;
+    this.renderView = 'threequarter';
+    const renders = this.setting?.renders;
+    if (step === 3 && renders && safeUrl(renders.baseUrl)) {
+      void loadRenderManifest(renders).then((m) => {
+        if (this.setting?.renders === renders) this.renderManifest = m;
+      });
+    }
     if (step === 2 && this.diamonds.length === 0) void this.loadDiamonds(false);
     // Bring the top of the widget into view; it may sit far down a long page.
     void this.updateComplete.then(() => {
@@ -789,12 +812,55 @@ export class JewelryConfigurator extends LitElement {
 
   // ── Step 3 ──
 
+  /** Photos from four angles, a 360° video and live 3D, rendered from the setting's CAD files. */
+  private renderRenderedGallery(r: RenderedRing, name: string, metal: string, d: Diamond): TemplateResult {
+    const view = this.renderView;
+    const describe = `${name} in ${metalLabel(metal)}`;
+    const thumb = (id: string, label: string, content: TemplateResult) => html`
+      <button type="button" class="render-thumb" aria-pressed=${view === id} aria-label=${label} @click=${() => (this.renderView = id)}>${content}</button>
+    `;
+    let hero: TemplateResult;
+    if (view === '3d') {
+      hero = html`<iframe src=${r.viewer} title="Live 3D view of the ${name}" loading="lazy" allow="fullscreen" referrerpolicy="no-referrer"></iframe>`;
+    } else if (view === '360' && r.video) {
+      hero = html`<video src="${r.base}/${r.video}" poster="${r.base}/threequarter.webp" autoplay loop muted playsinline preload="auto" aria-label="360° view of the ${describe}"></video>`;
+    } else {
+      const shown = r.views.find((x) => x.id === view) ?? r.views[0]!;
+      hero = html`<img
+        src="${r.base}/${shown.id}.webp"
+        srcset="${r.base}/${shown.id}-half.webp 500w, ${r.base}/${shown.id}.webp 1000w"
+        sizes="(max-width: 700px) 100vw, 560px"
+        alt="${describe}, ${shown.label.toLowerCase()} view"
+        decoding="async"
+      />`;
+    }
+    return html`
+      <div class="gallery">
+        <div class="hero rendered">${hero}</div>
+        <div class="render-thumbs" role="group" aria-label="Views">
+          ${r.views.map((x) => thumb(x.id, `${x.label} view`, html`<img src="${r.base}/${x.id}-half.webp" alt="" loading="lazy" decoding="async" />`))}
+          ${r.video ? thumb('360', '360° video', html`<span>360°</span>`) : nothing}
+          ${thumb('3d', 'Live 3D', html`<span>3D</span>`)}
+        </div>
+        <p class="caption">
+          ${r.exactShape
+            ? 'Rendered from the design files. Your ring is made to order.'
+            : `Shown with a ${r.shapeLabel.toLowerCase()} centre stone; your ${titleCase(d.shape).toLowerCase()} diamond is set in the same design.`}
+        </p>
+      </div>
+    `;
+  }
+
   private renderSummary(): TemplateResult {
     const s = this.setting!;
     const v = this.variant!;
     const d = this.diamond!;
     const render = safeUrl(v.imageUrls[0]) ?? safeUrl(s.thumbnailUrl);
     const spin = safeUrl(v.video360Url ?? s.video360Url);
+    const rendered =
+      s.renders && this.renderManifest && safeUrl(s.renders.baseUrl)
+        ? pickRendered(this.renderManifest, s.renders, v.metal, d.shape, d.color)
+        : null;
     const stoneImage = safeUrl(d.imageUrl);
     const stoneVideo = safeUrl(d.videoUrl);
     const cert = safeUrl(d.certificateUrl);
@@ -826,7 +892,7 @@ export class JewelryConfigurator extends LitElement {
         <h2 tabindex="-1">Review your ring</h2>
       </header>
       <div class="review">
-        <div class="gallery">
+        ${rendered ? this.renderRenderedGallery(rendered, s.name, v.metal, d) : html`<div class="gallery">
           <div class="hero">
             ${this.show360 && spin
               ? isVideoFile(spin)
@@ -852,7 +918,7 @@ export class JewelryConfigurator extends LitElement {
             ${stoneImage ? html`<span class="thumb small"><img src=${stoneImage} alt="${this.diamondTitle(d)}" loading="lazy" /></span>` : nothing}
             ${stoneVideo ? html`<a class="link" href=${stoneVideo} target="_blank" rel="noopener noreferrer">Diamond video ↗</a>` : nothing}
           </div>
-        </div>
+        </div>`}
 
         <div class="summary">
           <dl class="lines">

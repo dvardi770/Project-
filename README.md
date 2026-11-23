@@ -19,7 +19,8 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   │   │   ├── cart.ts         # POST /api/v1/bundle, /cart-item, /checkout
 │   │   │   │   ├── webhooks.ts     # POST /webhooks/:platform/:tenantId
 │   │   │   │   ├── shopifyProxy.ts # Shopify App Proxy: ring builder page + API through the proxy
-│   │   │   │   └── widgetAsset.ts  # GET  /widget/jewelry-configurator.js
+│   │   │   │   ├── widgetAsset.ts  # GET  /widget/jewelry-configurator.js
+│   │   │   │   └── renders.ts      # GET  /renders/* rendered photos, 360° videos, 3D viewer
 │   │   │   ├── services/           # bundle resolution, order intake
 │   │   │   └── modules/            # dashboard-side features (to come)
 │   │   └── test/                   # integration tests (real Postgres)
@@ -47,8 +48,10 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   ├── src/convert.mjs         # .3dm -> compressed head/shank meshes, baked occlusion, stone facets
 │   │   ├── src/meshData.mjs        # compact mesh format (quantised, meshopt-compressed)
 │   │   ├── src/fitCheck.mjs        # which heads fit which shanks
-│   │   ├── src/renderCatalogue.mjs # headless Chromium: product images of every fitting combination
-│   │   └── viewer/index.html       # three.js viewer: ray-traced stones, photo mode (path-traced metal)
+│   │   ├── src/renderMedia.mjs     # render studio: 4 angles + 360° video per metal, shape and colour
+│   │   ├── src/renderCatalogue.mjs # headless Chromium: one product image per fitting combination
+│   │   ├── viewer/index.html       # three.js viewer: ray-traced stones, photo mode, embed mode
+│   │   └── viewer/gallery.html     # render studio page: photos, video and 3D for every choice
 │   └── widget/                 # embeddable ring builder (Lit web component)
 │       ├── src/
 │       │   ├── jewelry-configurator.ts   # <jewelry-configurator>: 3-step wizard in a shadow root
@@ -253,6 +256,22 @@ properties: `--jc-accent`, `--jc-on-accent`, `--jc-highlight` (selected items an
 
 Where a setting or diamond has no photo, the widget draws one: the diamond's cut, and the ring in the
 chosen metal with the chosen stone set in it. Real photos always take precedence.
+
+### Rendered photos, 360° video and 3D
+
+A setting can be rendered from the jeweller's CAD files with `apps/ring-lab` (see its README):
+photos from four angles (angled, front, side, top) and a 360° turntable video on white, for every
+metal, centre-stone shape and diamond colour, plus a live 3D viewer. The API serves a folder of
+render collections (`RENDERS_DIR`, at `/renders/`, or from a CDN with `RENDERS_PUBLIC_URL`), and a
+setting points at its renders with `renderKey` (`"<collection>/<combo>"`).
+
+- `GET /api/v1/settings` then returns `renders` (`baseUrl`, `combo`, `viewerUrl`) for the setting, and
+  fills variants that have no photos of their own with the rendered ones (platinum and palladium use
+  the white-metal renders).
+- In the review step the widget shows the photos for the chosen metal and diamond shape, thumbnails
+  for the four angles, the 360° video (H.264 MP4, loaded only when opened) and the live 3D view.
+  Shapes that were not rendered fall back to the setting's own shape, with a caption saying so.
+- `/renders/` answers byte-range requests, which Safari needs to play video.
 
 It fires `jc-added-to-cart`, `jc-checkout` and `jc-error` on the element, and
 `jewelry-configurator:cart-updated` on `document` so a theme can refresh its cart drawer.

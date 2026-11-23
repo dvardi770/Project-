@@ -381,6 +381,10 @@ model VirtualSetting {
   // Default media (variants may override per metal)
   video360Url  String?
   thumbnailUrl String?
+  // Rendered photos, 360° video and live 3D made by apps/ring-lab, as "<collection>/<combo>":
+  // RENDERS_DIR/<collection>/media/<combo>/… Lower-case letters, digits and dashes only
+  // (checked in a migration), because it becomes part of a URL.
+  renderKey    String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)

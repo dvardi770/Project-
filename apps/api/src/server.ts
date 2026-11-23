@@ -16,6 +16,7 @@ import { settingRoutes } from './routes/settings';
 import { shopifyProxyRoutes } from './routes/shopifyProxy';
 import { webhookRoutes } from './routes/webhooks';
 import { widgetAssetRoutes } from './routes/widgetAsset';
+import { renderRoutes } from './routes/renders';
 
 export interface BuildServerOptions {
   config: AppConfig;
@@ -96,6 +97,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   );
 
   await app.register(widgetAssetRoutes, deps);
+  await app.register(renderRoutes, deps);
   await app.register(shopifyProxyRoutes, deps);
   await app.register(webhookRoutes, deps);
 

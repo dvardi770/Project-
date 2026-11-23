@@ -24,6 +24,8 @@ const schema = z.object({
   SHOPIFY_APP_SECRET: z.string().min(1).optional(),
   WIDGET_SCRIPT_URL: z.string().url().optional(),
   WIDGET_BUNDLE_PATH: z.string().optional(),
+  RENDERS_DIR: z.string().optional(),
+  RENDERS_PUBLIC_URL: z.string().url().optional(),
 });
 
 export interface AppConfig {
@@ -50,6 +52,10 @@ export interface AppConfig {
   widgetScriptUrl?: string;
   /** Where the built widget script is on disk. Default: apps/widget/dist/jewelry-configurator.js. */
   widgetBundlePath?: string;
+  /** Folder of render collections made by apps/ring-lab (served at /renders/ unless rendersPublicUrl is set). */
+  rendersDir?: string;
+  /** Public URL of the same folder on a CDN. Default: this API's own /renders/. */
+  rendersPublicUrl?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -88,5 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     shopifyAppSecret: e.SHOPIFY_APP_SECRET,
     widgetScriptUrl: e.WIDGET_SCRIPT_URL,
     widgetBundlePath: e.WIDGET_BUNDLE_PATH,
+    rendersDir: e.RENDERS_DIR,
+    rendersPublicUrl: e.RENDERS_PUBLIC_URL?.replace(/\/+$/, ''),
   };
 }

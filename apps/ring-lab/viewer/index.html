@@ -95,6 +95,13 @@ th { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color:
 td { color: var(--ink); }
 .wide { grid-column: 1 / -1; }
 
+/* Embed mode (?embed): only the 3D stage, filling the frame. Used by the ring builder and the gallery. */
+.embed body { background: #fff; }
+.embed .wrap > header, .embed aside, .embed .findings, .embed .photo-btn, .embed .fitbadge, .embed .legend { display: none !important; }
+.embed .wrap { max-width: none; padding: 0; }
+.embed .layout { display: block; }
+.embed .stage { position: fixed; inset: 0; border: 0; border-radius: 0; aspect-ratio: auto; background: #fff; }
+
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
   .stage { aspect-ratio: 1 / 1; }
@@ -140,10 +147,15 @@ td { color: var(--ink); }
         <div class="opts row" id="stone"></div>
       </fieldset>
       <fieldset>
+        <legend>Centre stone shape</legend>
+        <div class="opts row" id="shape"></div>
+      </fieldset>
+      <fieldset>
         <legend>Accent stones (halo, pavé, side stones)</legend>
         <div class="opts row" id="accent"></div>
       </fieldset>
       <label class="toggle"><input type="checkbox" id="parts"> Colour the head and shank to check the split</label>
+      <label class="toggle"><input type="checkbox" id="studio"> White product background</label>
     </aside>
   </div>
 
@@ -230,13 +242,22 @@ const STONES = {
   pink:     { label: 'Pink sapphire', ior: 1.77, dispersion: 0, absorption: [0.01, 0.22, 0.08], swatch: 'radial-gradient(circle at 35% 30%,#ffe0ee,#f07aae 60%,#a8336a)' },
   ruby:     { label: 'Ruby', ior: 1.77, dispersion: 0, absorption: [0.01, 0.55, 0.36], swatch: 'radial-gradient(circle at 35% 30%,#ff9aa8,#c8102e 60%,#5e0414)' },
   emerald:  { label: 'Emerald', ior: 1.58, dispersion: 0, absorption: [0.42, 0.035, 0.3], swatch: 'radial-gradient(circle at 35% 30%,#a6f0c4,#14935a 60%,#064a2b)' },
+  pinkdiamond: { label: 'Pink diamond', ior: 2.42, dispersion: 0.022, absorption: [0.0, 0.085, 0.035], swatch: 'radial-gradient(circle at 35% 30%,#fff0f5,#f4a6c4 60%,#c0577f)' },
+  bluediamond: { label: 'Blue diamond', ior: 2.42, dispersion: 0.022, absorption: [0.11, 0.035, 0.0], swatch: 'radial-gradient(circle at 35% 30%,#eef6ff,#8fbdf0 60%,#3f74b8)' },
 };
+// Centre stone shapes the cut library can offer (cuts found in the CAD files).
+const SHAPE_LABELS = { round: 'Round', oval: 'Oval', cushion: 'Cushion', emerald: 'Emerald', princess: 'Princess', pear: 'Pear', marquise: 'Marquise', radiant: 'Radiant', asscher: 'Asscher', heart: 'Heart' };
+const shapeOfCut = (name = '') => Object.keys(SHAPE_LABELS).find((k) => name.toLowerCase().includes(k)) ?? null;
 const ACCENTS = {
   diamond: { label: 'Diamonds', swatch: STONES.diamond.swatch },
   match:   { label: 'Same as centre', swatch: 'conic-gradient(#2747b8,#c8102e,#14935a,#f1cf45,#2747b8)' },
 };
 
-const state = { head: 1, shank: 1, metal: 'white', stone: 'sapphire', accent: 'diamond', parts: false, misfit: false };
+const state = { head: 1, shank: 1, metal: 'white', stone: 'sapphire', accent: 'diamond', parts: false, misfit: false, shape: null, studio: 'stage' };
+// ?embed shows only the stage; other parameters set the starting choices (see applyParams).
+const params = new URLSearchParams(location.search);
+const embed = params.has('embed');
+if (embed) document.documentElement.classList.add('embed');
 const fitOf = (h, s) => fit[`${h}-${s}`];
 const fits = (h, s) => fitOf(h, s)?.verdict === 'fits';
 const pct = (x) => `${Math.round(x * 100)}%`;
@@ -354,11 +375,16 @@ function renderStudio(top, mid, floor, flagsOn) {
 }
 const cubeRT = renderStudio(0.62, 0.16, 0.035, false);          // stones
 const metalStudio = renderStudio(1.3, 0.5, 0.14, true);           // metal
+// Product photos on white: the metal reflects a bright white sweep, with dark flags for the edge lines.
+const whiteStudio = renderStudio(1.5, 0.8, 0.36, true);
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromCubemap(metalStudio.texture).texture;
+const metalEnv = { stage: pmrem.fromCubemap(metalStudio.texture).texture, white: pmrem.fromCubemap(whiteStudio.texture).texture };
+scene.environment = metalEnv.stage;
 
 // Backdrop: a soft vertical gradient taken from the page's own colours.
 function paintBackdrop() {
+  // The white product studio has no backdrop in the scene: the ring is laid over pure white at the end.
+  if (state.studio === 'white') { scene.background?.dispose?.(); scene.background = null; needsRender = true; return; }
   const css = getComputedStyle(document.documentElement);
   const c = document.createElement('canvas');
   c.width = 2; c.height = 256;
@@ -379,10 +405,13 @@ paintBackdrop();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintBackdrop);
 new MutationObserver(paintBackdrop).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-// Rhino is Z-up; three.js is Y-up.
+// Rhino is Z-up; three.js is Y-up. The turntable turns the ring under fixed lights, as on a
+// photographer's turntable, so the stones' sparkle changes as it turns.
+const turntable = new THREE.Group();
 const root = new THREE.Group();
 root.rotation.x = -Math.PI / 2;
-scene.add(root);
+turntable.add(root);
+scene.add(turntable);
 
 // ─── Materials ─────────────────────────────────────────────────────────────
 const metalMat = new THREE.MeshPhysicalMaterial({ metalness: 1, roughness: 0.07, envMapIntensity: 1 });
@@ -641,6 +670,71 @@ function buildPart(ring, part) {
 }
 const parts = data.rings.map((ring) => ({ head: buildPart(ring, 'head'), shank: buildPart(ring, 'shank') }));
 
+// ─── Centre stone shapes ───────────────────────────────────────────────────
+// Every stone cut in the loaded files (round, oval, cushion…) can replace the centre stone.
+// The new cut is scaled to the seat the head was made for: as large as fits inside the
+// original stone's outline, at the same girdle height. A head made for another shape would
+// place its prongs differently; this shows the stone, not a production-ready head.
+const cutLibrary = new Map();
+data.rings.forEach((ring) => {
+  for (const d of Object.values(ring.defs)) {
+    const shape = shapeOfCut(d.name);
+    if (shape && d.mesh && !cutLibrary.has(shape)) cutLibrary.set(shape, d);
+  }
+});
+const cutInfoCache = new Map();
+function cutInfo(def) {
+  if (cutInfoCache.has(def)) return cutInfoCache.get(def);
+  const p = decodeMesh(def.mesh).positions;
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i++) { const k = i % 3; min[k] = Math.min(min[k], p[i]); max[k] = Math.max(max[k], p[i]); }
+  const cx = (min[0] + max[0]) / 2, cy = (min[1] + max[1]) / 2, hw = (max[0] - min[0]) / 2, hl = (max[1] - min[1]) / 2;
+  // The girdle: the widest ring of vertices.
+  let zSum = 0, n = 0;
+  for (let i = 0; i < p.length; i += 3) {
+    const r = ((p[i] - cx) / hw) ** 2 + ((p[i + 1] - cy) / hl) ** 2;
+    if (r > 0.94) { zSum += p[i + 2]; n++; }
+  }
+  const info = { w: hw * 2, l: hl * 2, girdle: n ? zSum / n : 0 };
+  cutInfoCache.set(def, info);
+  return info;
+}
+const centreOf = (ring) => ring.items.find((i) => i.role === 'centre' && i.def);
+const designedShape = (ringIndex) => shapeOfCut(data.rings[ringIndex].defs[centreOf(data.rings[ringIndex])?.def]?.name) ?? null;
+const shapesFor = (ringIndex) => [...new Set([designedShape(ringIndex), ...cutLibrary.keys()].filter(Boolean))].filter((s) => s !== 'trillion');
+
+function fitCut(origDef, xform, newDef) {
+  const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  new THREE.Matrix4().set(...xform).decompose(pos, q, sc);
+  const o = cutInfo(origDef), c = cutInfo(newDef);
+  const seatW = o.w * sc.x, seatL = o.l * sc.y;
+  // Lay an elongated cut along the seat's long side.
+  const turn = Math.abs(c.w - c.l) / Math.max(c.w, c.l) > 0.03 && (c.w > c.l) !== (seatW > seatL);
+  const cw = turn ? c.l : c.w, cl = turn ? c.w : c.l;
+  const s = Math.min(seatW / cw, seatL / cl);
+  pos.add(new THREE.Vector3(0, 0, o.girdle * sc.z - c.girdle * s).applyQuaternion(q));
+  if (turn) q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2));
+  return new THREE.Matrix4().compose(pos, q, new THREE.Vector3(s, s, s)).transpose().elements; // row-major, like the file
+}
+const shapedHeads = new Map();
+function headFor(ringIndex, shape) {
+  if (!shape || shape === designedShape(ringIndex) || !cutLibrary.has(shape)) return parts[ringIndex].head;
+  const key = `${ringIndex}|${shape}`;
+  if (!shapedHeads.has(key)) {
+    const ring = data.rings[ringIndex];
+    const centre = centreOf(ring);
+    const def = cutLibrary.get(shape);
+    const defId = `cut:${shape}`;
+    const swapped = {
+      ...ring,
+      defs: { ...ring.defs, [defId]: def },
+      items: ring.items.map((it) => (it === centre ? { ...it, def: defId, xform: fitCut(ring.defs[centre.def], centre.xform, def) } : it)),
+    };
+    shapedHeads.set(key, buildPart(swapped, 'head'));
+  }
+  return shapedHeads.get(key);
+}
+
 // ─── Soft contact shadow under the ring ────────────────────────────────────
 const SHADOW_RES = 512;
 const shadowRT = new THREE.WebGLRenderTarget(SHADOW_RES, SHADOW_RES);
@@ -684,7 +778,7 @@ function blurShadow(amount) {
   quad.render(renderer);
 }
 function updateShadow() {
-  root.updateMatrixWorld(true);
+  turntable.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(root);
   const size = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 1.9;
   shadowGroup.position.set((box.min.x + box.max.x) / 2, box.min.y - 0.02, (box.min.z + box.max.z) / 2);
@@ -718,7 +812,7 @@ function updateShadow() {
 function apply() {
   if (typeof photo !== 'undefined' && photo) stopPhoto();
   root.clear();
-  const head = parts[state.head].head, shank = parts[state.shank].shank;
+  const head = headFor(state.head, state.shape), shank = parts[state.shank].shank;
   // Seat the head on the chosen shank where the fit check found it sits best.
   head.position.z = data.rings[state.shank].shankTop - data.rings[state.head].shankTop + (fitOf(state.head, state.shank)?.shift ?? 0);
   const f = fitOf(state.head, state.shank);
@@ -807,9 +901,14 @@ const HEAD_LABELS = data.rings.map((r, i) => r.headLabel || `Head ${i + 1}`);
 const FILE_LABELS = data.rings.map((r, i) => `From the ${r.label || `ring ${i + 1}`}`);
 const SHANK_LABELS = data.rings.map((r, i) => r.shankLabel || `Shank ${i + 1}`);
 function renderButtons() {
-  const ids = ['head', 'shank', 'metal', 'stone', 'accent'];
-  const [h, sh, m, st, ac] = ids.map((id) => document.getElementById(id));
-  for (const el of [h, sh, m, st, ac]) el.replaceChildren();
+  const ids = ['head', 'shank', 'metal', 'stone', 'accent', 'shape'];
+  const [h, sh, m, st, ac, sp] = ids.map((id) => document.getElementById(id));
+  for (const el of [h, sh, m, st, ac, sp]) el.replaceChildren();
+  const designed = designedShape(state.head);
+  for (const shape of shapesFor(state.head)) {
+    const current = (state.shape ?? designed) === shape;
+    button(sp, SHAPE_LABELS[shape], shape === designed ? 'As designed' : 'Fitted to the seat', current, () => { state.shape = shape === designed ? null : shape; apply(); });
+  }
   data.rings.forEach((r, i) => {
     button(h, HEAD_LABELS[i], FILE_LABELS[i], state.head === i, () => choose('head', i), null, fits(i, state.shank) ? ['ok', 'Fits this band'] : ['bad', "Doesn't fit this band"]);
     button(sh, SHANK_LABELS[i], FILE_LABELS[i], state.shank === i, () => choose('shank', i), null, fits(state.head, i) ? ['ok', 'Fits this head'] : ['bad', "Doesn't fit this head"]);
@@ -819,6 +918,7 @@ function renderButtons() {
   for (const [k, v] of Object.entries(ACCENTS)) button(ac, v.label, '', state.accent === k, () => { state.accent = k; apply(); }, v.swatch);
 }
 document.getElementById('parts').addEventListener('change', (e) => { state.parts = e.target.checked; apply(); });
+document.getElementById('studio').addEventListener('change', (e) => { state.studio = e.target.checked ? 'white' : 'stage'; applyStudio(); needsRender = true; });
 
 // Fit check results for every pair.
 const tbody = document.querySelector('#fittable tbody');
@@ -868,15 +968,20 @@ const blendMat = new THREE.ShaderMaterial({
   depthTest: false, depthWrite: false, toneMapped: false,
 });
 const presentMat = new THREE.ShaderMaterial({
-  uniforms: { image: { value: null }, photo: { value: null }, usePhoto: { value: 0 } },
+  uniforms: { image: { value: null }, photo: { value: null }, usePhoto: { value: 0 }, matte: { value: 0 }, matteColor: { value: new THREE.Color(1, 1, 1) } },
   vertexShader: quadVertex,
-  fragmentShader: `uniform sampler2D image; uniform sampler2D photo; uniform float usePhoto; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D image; uniform sampler2D photo; uniform float usePhoto; uniform float matte; uniform vec3 matteColor; varying vec2 vUv;
     void main() {
-      gl_FragColor = texture2D(image, vUv);
+      vec4 c = texture2D(image, vUv);
       // The path-traced ring has a transparent background; lay it over the studio backdrop and shadow.
-      if (usePhoto > 0.5) { vec4 p = texture2D(photo, vUv); gl_FragColor.rgb = p.rgb + gl_FragColor.rgb * (1.0 - p.a); }
+      if (usePhoto > 0.5) { vec4 p = texture2D(photo, vUv); c.rgb = p.rgb + c.rgb * (1.0 - p.a); c.a = p.a + c.a * (1.0 - p.a); }
+      // Product studio: the image is the ring and its shadow over nothing; tone map the ring alone,
+      // then lay it over pure white so the background stays exactly white.
+      float a = matte > 0.5 ? clamp(c.a, 0.0, 1.0) : 1.0;
+      gl_FragColor = vec4(matte > 0.5 ? c.rgb / max(a, 1e-4) : c.rgb, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
+      if (matte > 0.5) gl_FragColor.rgb = mix(matteColor, gl_FragColor.rgb, a);
     }`,
   depthTest: false, depthWrite: false,
 });
@@ -921,6 +1026,26 @@ function setStoneQuality(q, bouncesCap) {
 function halton(i, b) { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; }
 
 let shown = { image: null, photo: null };
+/** Adds one sub-pixel-shifted, full-quality frame to the still image. */
+function stillSample() {
+  sizeTargets(STILL.scale);
+  setStoneQuality(STILL);
+  const w = frameRT.width, h = frameRT.height;
+  if (samples === 0) camera.clearViewOffset();
+  else camera.setViewOffset(w, h, halton(samples, 2) - 0.5, halton(samples, 3) - 0.5, w, h);
+  renderer.setRenderTarget(frameRT);
+  renderer.render(scene, camera);
+  camera.clearViewOffset();
+  blendMat.uniforms.current.value = frameRT.texture;
+  blendMat.uniforms.previous.value = accumRead.texture;
+  blendMat.uniforms.weight.value = 1 / (samples + 1);
+  screenQuad.material = blendMat;
+  renderer.setRenderTarget(accumWrite);
+  screenQuad.render(renderer);
+  [accumRead, accumWrite] = [accumWrite, accumRead];
+  samples++;
+}
+
 function present(texture, photoTexture = null) {
   shown = { image: texture, photo: photoTexture };
   presentMat.uniforms.image.value = texture;
@@ -972,8 +1097,8 @@ async function startPhoto(target = PHOTO_SAMPLES) {
   if (photo !== job) return job;
 
   const photoScene = new THREE.Scene();
-  photoScene.environment = metalStudio.texture;
-  root.updateMatrixWorld(true);
+  photoScene.environment = state.studio === 'white' ? whiteStudio.texture : metalStudio.texture;
+  turntable.updateMatrixWorld(true);
   const gems = { centre: [], accent: [] };
   const mi = new THREE.Matrix4();
   root.traverse((o) => {
@@ -1025,10 +1150,93 @@ function photoStep() {
 }
 photoBtn.addEventListener('click', () => { if (photo) stopPhoto(); else startPhoto(); });
 
+// ─── Product studio, camera views and turntable ────────────────────────────
+function applyStudio() {
+  const white = state.studio === 'white';
+  presentMat.uniforms.matte.value = white ? 1 : 0;
+  renderer.setClearColor(white ? 0xffffff : 0x000000, white ? 0 : 1);
+  shadowPlane.material.opacity = white ? 0.42 : 0.6;
+  scene.environment = white ? metalEnv.white : metalEnv.stage;
+  paintBackdrop();
+}
+
+// The four product views. Directions point from the ring towards the camera (three.js axes:
+// the ring stands upright, head up, finger hole along z).
+const VIEWS = {
+  threequarter: { dir: [36, 14.5, 62], up: [0, 1, 0], label: 'Angled' },
+  front: { dir: [0, 0.16, 1], up: [0, 1, 0], label: 'Front' },
+  side: { dir: [1, 0.14, 0], up: [0, 1, 0], label: 'Side' },
+  top: { dir: [0, 1, 0.02], up: [0, 0, -1], label: 'Top' },
+};
+/** Frames the whole ring from one of the product views, filling the frame with a small margin. */
+function setView(name, margin = 1.06) {
+  const v = VIEWS[name] ?? VIEWS.threequarter;
+  const saved = turntable.rotation.y;
+  turntable.rotation.y = 0;
+  turntable.updateMatrixWorld(true);
+  const sphere = new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere());
+  turntable.rotation.y = saved;
+  turntable.updateMatrixWorld(true);
+  const fovY = THREE.MathUtils.degToRad(camera.fov);
+  const fovX = 2 * Math.atan(Math.tan(fovY / 2) * camera.aspect);
+  const distance = (sphere.radius * margin) / Math.sin(Math.min(fovY, fovX) / 2);
+  camera.up.set(...v.up);
+  controls.target.copy(sphere.center);
+  camera.position.copy(sphere.center).addScaledVector(new THREE.Vector3(...v.dir).normalize(), distance);
+  camera.lookAt(sphere.center);
+  controls.update();
+  needsRender = true;
+}
+/** Turns the ring on the turntable (radians). */
+function setAngle(angle) {
+  turntable.rotation.y = angle;
+  updateShadow();
+  needsRender = true;
+}
+
+// Starting choices from the address (?head=&shank=&metal=&stone=&shape=&accent=&studio=&view=&rotate=0).
+function applyParams() {
+  const n = (k) => (params.has(k) && Number.isInteger(Number(params.get(k))) ? Number(params.get(k)) : null);
+  const head = n('head'), shank = n('shank');
+  if (head !== null && data.rings[head]) state.head = head;
+  if (shank !== null && data.rings[shank]) state.shank = shank;
+  if (!fits(state.head, state.shank)) {
+    const ok = data.rings.map((_, j) => j).find((j) => fits(state.head, j));
+    if (ok !== undefined) state.shank = ok;
+  }
+  for (const [key, table] of [['metal', METALS], ['stone', STONES], ['accent', ACCENTS]]) if (table[params.get(key)]) state[key] = params.get(key);
+  if (SHAPE_LABELS[params.get('shape')]) state.shape = params.get('shape');
+  if (params.get('studio') === 'white') state.studio = 'white';
+  if (params.get('rotate') === '0' || embed) controls.autoRotate = params.get('rotate') === '1' && !reducedMotion;
+}
+
+applyParams();
 new ResizeObserver(resize).observe(stageEl);
 resize();
+applyStudio();
 apply();
+if (params.get('view')) setView(params.get('view'));
 controls.addEventListener('change', () => { lastMove = performance.now(); samples = 0; stopPhoto(); });
+
+/** Changes choices without reloading; used by the API below and by pages that frame this viewer. */
+function setOptions(o = {}) {
+  let rebuild = false;
+  for (const key of ['head', 'shank']) if (Number.isInteger(o[key]) && data.rings[o[key]]) { state[key] = o[key]; rebuild = true; }
+  for (const [key, table] of [['metal', METALS], ['stone', STONES], ['accent', ACCENTS]]) if (o[key] && table[o[key]]) { state[key] = o[key]; rebuild = true; }
+  if ('shape' in o) { state.shape = SHAPE_LABELS[o.shape] ? o.shape : null; rebuild = true; }
+  if (o.studio && o.studio !== state.studio) { state.studio = o.studio === 'white' ? 'white' : 'stage'; applyStudio(); }
+  if (rebuild) apply();
+  if (typeof o.angle === 'number') setAngle(o.angle);
+  if (o.view) setView(o.view);
+}
+// Frames on other sites (the ring builder) send { type: 'ring-viewer:set', options }. Only view
+// choices are accepted, so any page may send them.
+window.addEventListener('message', (event) => {
+  if (event.data?.type === 'ring-viewer:set' && typeof event.data.options === 'object') {
+    stopPhoto();
+    setOptions(event.data.options);
+  }
+});
 
 // Plain stones for devices whose graphics chip cannot run the ray tracer.
 function useSimpleStones() {
@@ -1050,17 +1258,51 @@ window.ringViewer = {
     .map(([head, shank]) => ({ head, shank, headLabel: HEAD_LABELS[head], shankLabel: SHANK_LABELS[shank] })),
   metals: Object.keys(METALS),
   stones: Object.keys(STONES),
-  /** Shows a configuration from the catalogue angle and resolves once the still image is finished. */
+  views: Object.keys(VIEWS),
+  /** Centre stone shapes available for a head: the shape it was designed for first. */
+  shapes: (head) => shapesFor(head),
+  designedShape: (head) => designedShape(head),
+  /**
+   * Shows a configuration and resolves once the still image is finished.
+   * config: { head, shank, metal, stone, accent, shape, studio: 'white'|'stage', view, angle }.
+   */
   async show(config) {
     stopPhoto();
-    Object.assign(state, config);
     controls.autoRotate = false;
-    // A little wider than the opening view, so a square image keeps the whole ring with a margin.
-    camera.position.set(40.3, 19.2, 69.5);
-    controls.target.set(0, 3, 0);
-    controls.update();
-    apply();
+    setOptions({ ...config, view: undefined, angle: undefined });
+    setAngle(config.angle ?? 0);
+    setView(config.view ?? 'threequarter');
     do await nextFrame(); while (samples < STILL_SAMPLES);
+  },
+  /** Sets up a configuration, angle and view without rendering (pair with renderNow). */
+  prepare(config) {
+    stopPhoto();
+    controls.autoRotate = false;
+    setOptions({ ...config, view: undefined, angle: undefined });
+    setAngle(config.angle ?? 0);
+    setView(config.view ?? 'threequarter');
+  },
+  /** Labels and swatches for the options, for pages that list them. */
+  labels: () => ({
+    metals: Object.fromEntries(Object.entries(METALS).map(([k, v]) => [k, { label: v.label, swatch: v.swatch }])),
+    stones: Object.fromEntries(Object.entries(STONES).map(([k, v]) => [k, { label: v.label, swatch: v.swatch }])),
+    shapes: SHAPE_LABELS,
+    views: Object.fromEntries(Object.entries(VIEWS).map(([k, v]) => [k, v.label])),
+  }),
+  /**
+   * Renders the still image right away, without waiting for animation frames (for turntable
+   * videos). Turns the ring to `angle` first, if given.
+   */
+  renderNow({ angle, samples: count = 8 } = {}) {
+    stopPhoto();
+    controls.autoRotate = false;
+    if (typeof angle === 'number') setAngle(angle);
+    samples = 0;
+    lastMove = -1e9;
+    needsRender = false;
+    for (let i = 0; i < count; i++) stillSample();
+    present(accumRead.texture);
+    samples = STILL_SAMPLES; // nothing left for the render loop to add
   },
   /** Path traces the current view and resolves when the given number of samples is done. */
   async photo(target = PHOTO_SAMPLES) {
@@ -1068,10 +1310,10 @@ window.ringViewer = {
     if (job.done) return;
     await new Promise((r) => job.waiters.push(r));
   },
-  /** PNG data URL of what is on screen now. */
-  capture() {
+  /** Data URL of what is on screen now ('image/png', 'image/jpeg' or 'image/webp'). */
+  capture(type = 'image/png', quality = 0.95) {
     present(shown.image, shown.photo);
-    return renderer.domElement.toDataURL('image/png');
+    return renderer.domElement.toDataURL(type, quality);
   },
 };
 
@@ -1139,23 +1381,8 @@ renderer.setAnimationLoop((time) => {
       }
       return;
     }
-    sizeTargets(STILL.scale);
-    setStoneQuality(STILL);
-    const w = frameRT.width, h = frameRT.height;
-    if (samples === 0) camera.clearViewOffset();
-    else camera.setViewOffset(w, h, halton(samples, 2) - 0.5, halton(samples, 3) - 0.5, w, h);
-    renderer.setRenderTarget(frameRT);
-    renderer.render(scene, camera);
-    camera.clearViewOffset();
-    blendMat.uniforms.current.value = frameRT.texture;
-    blendMat.uniforms.previous.value = accumRead.texture;
-    blendMat.uniforms.weight.value = 1 / (samples + 1);
-    screenQuad.material = blendMat;
-    renderer.setRenderTarget(accumWrite);
-    screenQuad.render(renderer);
-    [accumRead, accumWrite] = [accumWrite, accumRead];
+    stillSample();
     present(accumRead.texture);
-    samples++;
   }
   if (first) { first = false; statusEl.remove(); }
 });

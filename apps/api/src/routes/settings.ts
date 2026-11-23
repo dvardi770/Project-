@@ -11,8 +11,11 @@ import type { FastifyInstance } from 'fastify';
 import { DiamondShape, MetalType, MountingStyle, type MarkupRule, type Prisma } from '@jewelry/db';
 import { calculateRetailPrice } from '@jewelry/pricing';
 import { z } from 'zod';
+import type { RenderSet } from '@jewelry/shared/storefront';
 import type { AppDeps } from '../common/context';
 import { csvEnum, pagination, type Money } from '../common/query';
+import { loadManifest, renderSet, variantMedia } from '../services/renders';
+import { RENDERS_PATH } from './renders';
 
 /** Catalogues are small; pricing and paging happen in memory over at most this many. */
 const MAX_SETTINGS = 1000;
@@ -64,6 +67,8 @@ export interface SettingDto {
   variants: SettingVariantDto[];
   /** Cheapest variant, for "from $…" labels. */
   priceFrom: Money;
+  /** Rendered photos, 360° video and live 3D (apps/ring-lab), when the setting has them. */
+  renders: RenderSet | null;
 }
 
 const num = (d: Prisma.Decimal | null) => (d === null ? null : d.toNumber());
@@ -73,6 +78,8 @@ async function listSettings(
   tenantId: string,
   query: SettingQuery,
   rules: MarkupRule[],
+  /** Public URL of the render collections, or null when renders are not served. */
+  rendersBase: string | null,
 ): Promise<SettingDto[]> {
   const variantFilter: Prisma.VirtualSettingVariantWhereInput = {
     isActive: true,
@@ -100,6 +107,9 @@ async function listSettings(
 
   const result: SettingDto[] = [];
   for (const s of settings) {
+    const renders = s.renderKey && rendersBase ? renderSet(rendersBase, s.renderKey) : null;
+    // Variants without photos of their own show the rendered ones.
+    const manifest = renders && deps.config.rendersDir ? await loadManifest(deps.config.rendersDir, s.renderKey!.split('/')[0]!) : null;
     const variants: SettingVariantDto[] = [];
     for (const v of s.variants) {
       const priced = calculateRetailPrice(
@@ -107,12 +117,13 @@ async function listSettings(
         rules,
       );
       if (!priced) continue;
+      const rendered = manifest && renders ? variantMedia(manifest, renders, v.metal) : null;
       variants.push({
         id: v.id,
         metal: v.metal,
         metalWeightGrams: num(v.metalWeightGrams),
-        video360Url: v.video360Url ?? s.video360Url,
-        imageUrls: v.imageUrls,
+        video360Url: v.video360Url ?? s.video360Url ?? rendered?.video360Url ?? null,
+        imageUrls: v.imageUrls.length ? v.imageUrls : (rendered?.imageUrls ?? []),
         price: { amount: priced.retailPrice.toFixed(2), currency: priced.currency },
       });
     }
@@ -131,7 +142,7 @@ async function listSettings(
       bandWidthMm: num(s.bandWidthMm),
       leadTimeDays: s.leadTimeDays,
       video360Url: s.video360Url,
-      thumbnailUrl: s.thumbnailUrl,
+      thumbnailUrl: s.thumbnailUrl ?? variants[0]!.imageUrls[0] ?? null,
       sideStones: s.sideStones.map((st) => ({
         position: st.position,
         shape: st.shape,
@@ -144,6 +155,7 @@ async function listSettings(
       })),
       variants,
       priceFrom: variants[0]!.price,
+      renders,
     });
   }
   return result;
@@ -154,18 +166,20 @@ export async function settingRoutes(app: FastifyInstance, deps: AppDeps): Promis
     const query = querySchema.parse(request.query);
     const { tenantId } = request.tenant;
     const matrix = await deps.markupMatrix(tenantId);
+    const { rendersPublicUrl, rendersDir } = deps.config;
+    const rendersBase = rendersPublicUrl ?? (rendersDir ? `${request.protocol}://${request.host}${RENDERS_PATH}` : null);
 
     // The full filtered list is cached; pages are cut from it.
     const { page, limit, ...filters } = query;
     const digest = createHash('sha1')
-      .update(JSON.stringify({ ...filters, metal: filters.metal?.slice().sort(), shape: filters.shape?.slice().sort(), style: filters.style?.slice().sort() }))
+      .update(JSON.stringify({ ...filters, metal: filters.metal?.slice().sort(), shape: filters.shape?.slice().sort(), style: filters.style?.slice().sort(), rendersBase }))
       .digest('hex');
     const cacheKey = `settings:v1:${tenantId}:${matrix.version}:${digest}`;
 
     let all = await deps.cache.get<SettingDto[]>(cacheKey);
     reply.header('x-cache', all ? 'HIT' : 'MISS');
     if (!all) {
-      all = await listSettings(deps, tenantId, query, matrix.rules);
+      all = await listSettings(deps, tenantId, query, matrix.rules, rendersBase);
       await deps.cache.set(cacheKey, all, deps.config.searchCacheTtlSeconds);
     }
 

@@ -1,7 +1,10 @@
-# Ring lab (prototype)
+# Ring lab: 3D configurator and render studio
 
-A test bed for a 3D ring configurator built straight from the jeweller's CAD files. It is
-not wired into the API, widget or dashboard yet.
+Built straight from the jeweller's CAD files: a live 3D viewer, an automatic fit check for
+mixing heads and shanks, and a render studio that makes product photos from four angles and a
+360° video for every metal, centre-stone shape and diamond colour. The ring builder shows the
+renders and the 3D view for settings that have them (see "Rendered photos, 360° video and 3D"
+in the main README).
 
 - **Converter** (`src/convert.mjs`) reads Rhino / MatrixGold `.3dm` files with `rhino3dm`,
   keeps the visible `Metal*` and `Gem*` layers, and splits each ring into its **head** (the
@@ -34,8 +37,27 @@ not wired into the API, widget or dashboard yet.
     still image: MatrixGold keeps stone seats as separate cutter objects, so the metal
     under each stone is solid and a path tracer would show the stones nearly black.
   - Mixes that don't fit are switched to a part that fits.
-  - `window.ringViewer` lets scripts set a configuration, wait for the finished image and
-    capture it.
+  - **Centre-stone shapes**: any cut found in the loaded files (round, oval, cushion…) can
+    replace the centre stone. It is scaled to the head's seat (as large as fits in the original
+    stone's outline, at the same girdle height). A head made for another shape would place its
+    prongs differently, so this shows the stone, not a production head.
+  - **Fancy colours**: yellow, pink and blue diamonds, besides sapphire, ruby and emerald.
+  - **White product studio** (`studio: 'white'`): the ring and its shadow are laid over pure
+    white after tone mapping, and the metal reflects a bright white sweep with dark flags.
+  - **Views and turntable**: angled, front, side and top, framed automatically; the turntable
+    turns the ring under fixed lights, as on a photographer's turntable.
+  - **Embed mode** (`index.html?embed&studio=white&head=&shank=&metal=&stone=&shape=&rotate=1`):
+    only the stage, for the ring builder and the render studio page. Pages that frame it can
+    change choices with `postMessage({ type: 'ring-viewer:set', options })`.
+  - `window.ringViewer` lets scripts set a configuration (`show`, `prepare`), render a still
+    right away (`renderNow`), path trace it (`photo`) and capture it (`capture`).
+- **Render studio** (`src/renderMedia.mjs`): for every fitting head and shank, in each metal,
+  shape and colour, four photos (WebP, full and half size) and a 360° turntable (H.264 MP4 with
+  `+faststart`, no audio, a seamless loop), plus `media/manifest.json`. Photos are path traced
+  by default (`--image-quality photo`). Needs ffmpeg. Finished variants are skipped on a re-run.
+- **Render studio page** (`viewer/gallery.html`): a product page with the photos, thumbnails
+  for the four angles, the 360° video and live 3D, and choices for setting, metal, shape and
+  colour. Combinations not yet rendered are shown in live 3D.
 - **Catalogue renderer** (`src/renderCatalogue.mjs`) drives the viewer in headless Chromium
   (Playwright) and saves a PNG of every fitting head and shank in each metal and stone, plus
   `catalogue/manifest.json`. The viewer shows them as a gallery.
@@ -47,9 +69,29 @@ not wired into the API, widget or dashboard yet.
 # [{ "file": "oval.3dm", "label": "3 oval file", "head": "Three-stone oval", "shank": "Plain band" }]
 node src/convert.mjs path/to/rings.config.json out
 node src/fitCheck.mjs out
-node src/renderCatalogue.mjs out --metals white,yellow,rose --stones diamond --quality photo --samples 240 --size 1024
-npx serve out          # or any static server; open index.html
+node src/renderMedia.mjs out --metals white,yellow,rose --colours white,yellow,pink,blue --shapes all
+npx serve out          # or any static server; open index.html (3D) or gallery.html (render studio)
 ```
+
+To serve renders to the ring builder, put each output folder in the API's `RENDERS_DIR` under a
+collection name and set the setting's `renderKey` to `"<collection>/<combo id from the manifest>"`.
+
+## Why it looks real and loads fast
+
+- The approach is the one iJewel's batch renderer (BatchX) describes: a real-time engine renders
+  every metal × stone × view as images and 360° turntables, with separate lighting for metal and
+  for stones. Diamonds get their fire the way offline renderers such as Blender's Cycles fake it:
+  red, green and blue bend by slightly different amounts.
+- Shoppers never wait for rendering: they download finished files. Photos are WebP in two sizes
+  (phones take the half-size one, about 5–40 KB on white); the 360° video is a short H.264 MP4
+  that starts streaming at once and loads only when opened; the 3D engine loads only on request.
+
+## Speed
+
+Measured on the build machine, which has no GPU (Chromium's software renderer): a 1000 px
+still with 16 sub-pixel samples takes about 10 s, a 540 px turntable frame about 1 s, so one
+variant (four photos and a 96-frame video) about 2.5 minutes. A machine with a GPU should be many
+times faster; pass Chromium flags that enable it through `RING_LAB_CHROMIUM_ARGS`.
 
 The catalogue renderer serves the viewer's libraries from `node_modules`, so it needs no
 internet access. It needs Playwright's Chromium (`npx playwright install chromium` on a new
@@ -71,4 +113,8 @@ files) and the compressed-data round-trip test.
 - Photo mode reaches into `three-gpu-pathtracer` 0.0.23 only through its public API; the
   newer releases need a newer three.js than the viewer uses.
 - Only tested in Chromium without a GPU; not yet on a phone.
-- No pricing, cart, ring sizing, or Nivoda stone swap.
+- Shapes other than a head's own are fitted to its seat for display; production needs a head
+  per shape. The fit check does not check stone shapes.
+- Fancy-colour diamonds are not in the diamond data yet, so the ring builder always shows
+  white diamonds; the render studio page offers all colours.
+- No ring sizing.

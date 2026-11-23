@@ -35,6 +35,39 @@ export interface Setting {
   sideStones: { shape: string; quantity: number; totalCarat: number }[];
   variants: SettingVariant[];
   priceFrom: Money;
+  /** Rendered photos, 360° video and live 3D, when the setting has been rendered. */
+  renders: RenderSet | null;
+}
+
+/** Where a setting's rendered media lives (made by apps/ring-lab). */
+export interface RenderSet {
+  /** Absolute URL of the render collection. The media manifest is `${baseUrl}/media/manifest.json`. */
+  baseUrl: string;
+  /** This setting's entry in the manifest's `combos` (its `id`). */
+  combo: string;
+  /** The live 3D viewer page. Options go in the query: `?embed&studio=white&head=…&shank=…&metal=…&stone=…&shape=…`. */
+  viewerUrl: string;
+}
+
+/** media/manifest.json in a render collection, as apps/ring-lab/src/renderMedia.mjs writes it. */
+export interface RenderManifest {
+  version: 1;
+  imageSize: number;
+  halfSize: number;
+  views: { id: string; label: string }[];
+  metals: Record<string, { label: string; swatch: string }>;
+  colours: Record<string, { label: string; swatch: string }>;
+  shapes: Record<string, { label: string }>;
+  combos: {
+    id: string;
+    head: number;
+    shank: number;
+    headLabel: string;
+    shankLabel: string;
+    designedShape: string;
+    /** Keyed `${metal}.${shape}.${colour}`. Files: `${baseUrl}/media/${dir}/${view}.webp`, `${view}-half.webp`, and `video`. */
+    variants: Record<string, { metal: string; shape: string; colour: string; dir: string; views: string[]; video: string | null }>;
+  }[];
 }
 
 export interface Diamond {

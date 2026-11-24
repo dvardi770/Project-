@@ -68,7 +68,9 @@ in the main README).
   turntable of it lying down (720 px, 180 frames at 30 fps, H.264 MP4 at CRF 18 with
   `+faststart`, no audio, a seamless loop, plus its first frame as a poster), and
   `media/manifest.json`. Photos are also path traced by default (`--image-quality photo`).
-  Variants render most-wanted first; finished ones are skipped on a re-run. Needs ffmpeg.
+  Variants render most-wanted first; finished ones are skipped on a re-run. A run adds to the
+  manifest rather than replacing it, so a long job can be split (one run per shape, or a metal
+  added later) and every finished variant stays listed. Needs ffmpeg.
 - **Render studio page** (`viewer/gallery.html`): a product page with the photos, thumbnails
   for the four angles, the 360° video and live 3D, and choices for setting, metal, shape and
   colour. Combinations not yet rendered are shown in live 3D.

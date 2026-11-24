@@ -24,6 +24,8 @@
  * Variants are rendered most-wanted first: each design's own stone shape with a white diamond in
  * every metal, then the other diamond colours, then the other shapes. The manifest is written
  * after each variant, so a stopped run is usable, and finished variants are skipped on a re-run.
+ * A run adds to the manifest: variants from earlier runs (say, another metal) stay listed while
+ * their files exist, so a long job can be split into runs, e.g. one per shape.
  *
  * Output: <out-dir>/media/manifest.json and <out-dir>/media/<combo>/<metal>-<shape>-<colour>/
  *   {view}.webp and {view}-half.webp, spin.mp4 (H.264, +faststart, no audio) and spin-poster.webp
@@ -82,14 +84,16 @@ const rv = (fn, arg) => page.evaluate(fn, arg);
 const labels = await rv(() => window.ringViewer.labels());
 const combos = await rv(() => window.ringViewer.combos());
 
+// A run adds to what earlier runs rendered (another metal, another shape), so the manifest keeps
+// their choices and every earlier variant whose files are still there.
 const manifest = {
   version: 1,
   generated: new Date().toISOString(),
   imageSize, halfSize: Math.round(imageSize / 2), videoSize,
-  views: views.map((id) => ({ id, label: labels.views[id] ?? id })),
-  metals: Object.fromEntries(metals.map((m) => [m, labels.metals[m]])),
-  colours: Object.fromEntries([...new Set([...colours, ...shapeColours])].map((c) => [c, { label: COLOURS[c].label, swatch: labels.stones[COLOURS[c].stone].swatch }])),
-  shapes: {},
+  views: [...new Map([...(previous?.views ?? []), ...views.map((id) => ({ id, label: labels.views[id] ?? id }))].map((v) => [v.id, v])).values()],
+  metals: { ...previous?.metals, ...Object.fromEntries(metals.map((m) => [m, labels.metals[m]])) },
+  colours: { ...previous?.colours, ...Object.fromEntries([...new Set([...colours, ...shapeColours])].map((c) => [c, { label: COLOURS[c].label, swatch: labels.stones[COLOURS[c].stone].swatch }])) },
+  shapes: { ...previous?.shapes },
   combos: [],
 };
 
@@ -101,7 +105,9 @@ for (const combo of combos) {
   const available = await rv((h) => window.ringViewer.shapes(h), combo.head);
   const shapes = shapesOption === 'designed' ? [designed] : shapesOption === 'all' ? available : shapesOption.split(',').filter((s) => available.includes(s));
   for (const s of shapes) manifest.shapes[s] = { label: labels.shapes[s] ?? s };
-  const entry = { id, head: combo.head, shank: combo.shank, headLabel: combo.headLabel, shankLabel: combo.shankLabel, designedShape: designed, variants: {} };
+  const earlier = previous?.combos?.find((c) => c.id === id)?.variants ?? {};
+  const kept = Object.fromEntries(Object.entries(earlier).filter(([, v]) => existsSync(join(mediaDir, v.dir, `${v.views[0]}.webp`))));
+  const entry = { id, head: combo.head, shank: combo.shank, headLabel: combo.headLabel, shankLabel: combo.shankLabel, designedShape: designed, variants: kept };
   manifest.combos.push(entry);
   for (const shape of shapes) {
     for (const metal of metals) {
@@ -123,7 +129,7 @@ for (const { combo, entry, shape, metal, colour } of jobs) {
   const variant = { metal, shape, colour, dir, views, video: video ? 'spin.mp4' : null, poster: video ? 'spin-poster.webp' : null };
   const done = views.every((v) => existsSync(join(abs, `${v}.webp`))) && (!video || existsSync(join(abs, 'spin.mp4')));
   if (done && !force) {
-    entry.variants[key] = previous?.combos?.find((c) => c.id === entry.id)?.variants?.[key] ?? variant;
+    entry.variants[key] ??= variant;
     continue;
   }
   mkdirSync(abs, { recursive: true });

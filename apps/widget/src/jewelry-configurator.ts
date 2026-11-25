@@ -853,7 +853,7 @@ export class JewelryConfigurator extends LitElement {
         <div class="render-thumbs" role="group" aria-label="Views">
           ${r.photos.map((p) => thumb(p.id, named(p.label), html`<img src=${p.thumb} alt="" decoding="async" />`))}
           ${r.spin ? thumb('360', r.spin.video ? '360° video' : '360° view', html`${r.spin.poster || r.photos[0] ? html`<img src=${r.spin.poster ?? r.photos[0]!.thumb} alt="" decoding="async" />` : nothing}<span class="tag">360°</span>`) : nothing}
-          ${r.viewer ? thumb('3d', 'Live 3D', html`<span class="big">3D</span><span class="tag">Live</span>`) : nothing}
+          ${r.viewer ? thumb('3d', 'Live 3D', html`<span class="big">3D</span>`) : nothing}
         </div>
         <p class="caption">${caption}</p>
         ${extras}

@@ -179,7 +179,7 @@ const brightFragment = /* glsl */`
     vec4 c = texture2D(tColor, vUv);
     vec3 rgb = c.rgb;
     float l = max(rgb.r, max(rgb.g, rgb.b));
-    gl_FragColor = vec4(rgb * smoothstep(threshold, threshold * 2.2, l), 1.0);
+    gl_FragColor = vec4(rgb * smoothstep(threshold, threshold * 1.8, l), 1.0);
   }`;
 
 const blurFragment = /* glsl */`
@@ -369,11 +369,11 @@ export class Stage {
 
     this.buildTargets();
     this.post = {
-      bright: new Pass(brightFragment, { tColor: { value: null }, threshold: { value: 1.6 } }),
+      bright: new Pass(brightFragment, { tColor: { value: null }, threshold: { value: 5.5 } }),
       blur: new Pass(blurFragment, { tColor: { value: null }, step: { value: new THREE.Vector2() } }),
       average: new Pass(averageFragment, { tFrame: { value: null }, tSum: { value: null }, weight: { value: 1 } }),
       compose: new Pass(composeFragment, {
-        tColor: { value: null }, tGlow: { value: null }, glow: { value: 0.35 }, exposure: { value: 1.0 },
+        tColor: { value: null }, tGlow: { value: null }, glow: { value: 0.18 }, exposure: { value: 1.0 },
         background: { value: new THREE.Color(this.options.background) },
       }),
     };
@@ -1034,7 +1034,7 @@ export class Stage {
     bright.material.uniforms.tColor.value = texture;
     bright.render(r, this.glowRT[0]);
     const [g0, g1] = this.glowRT;
-    for (const s of [1, 2]) {
+    for (const s of [1]) {
       blur.material.uniforms.tColor.value = g0.texture;
       blur.material.uniforms.step.value.set(s / g0.width, 0);
       blur.render(r, g1);

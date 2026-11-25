@@ -232,22 +232,10 @@ function studioMaps(renderer) {
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(60, 48, 24), dome));
   const boxes = [];
-  // Softboxes have diffusers: bright in the middle, fading towards their edges, so polished
-  // metal shows soft-edged highlights as in a photo, not hard rectangles. Small round lights stay
-  // crisp: they are the pin-point glints that make stones sparkle.
-  const feathered = () => new THREE.ShaderMaterial({
-    side: THREE.DoubleSide,
-    uniforms: { level: { value: 1 } },
-    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform float level; varying vec2 vUv;
-      void main() { vec2 e = min(vUv, 1.0 - vUv) * 2.0; float f = smoothstep(0.0, 0.6, e.x) * smoothstep(0.0, 0.6, e.y); gl_FragColor = vec4(vec3(level * (0.2 + 0.8 * f)), 1.0); }`,
-  });
   const box = (w, h, x, y, z, round = false) => {
-    const material = round ? new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }) : feathered();
-    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w, h), material);
+    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
     m.position.set(x, y, z);
     m.lookAt(0, 0, 0);
-    m.userData.setLevel = (v) => { if (round) material.color.setScalar(v); else material.uniforms.level.value = v; };
     scene.add(m);
     boxes.push(m);
     return m;
@@ -256,19 +244,19 @@ function studioMaps(renderer) {
     box(36, 36, 0, 46, 0), box(8, 48, -40, 8, 16), box(8, 48, 38, 8, -12),
     box(32, 12, 12, 14, 46), box(38, 6, 0, 12, -46), box(16, 6, -30, -6, -30),
   ];
-  const sparks = [[22, 34, 26], [-26, 28, -14], [6, 40, -22], [-18, 22, 34], [34, 18, 6], [-34, 12, -30], [12, 44, 10], [-8, 36, 30], [28, 26, -24], [-38, 20, 8], [0, 30, -38], [40, 32, -6]].map(([x, y, z]) => box(1.8, 0, x, y, z, true));
+  const sparks = [[22, 34, 26], [-26, 28, -14], [6, 40, -22], [-18, 22, 34], [34, 18, 6], [-34, 12, -30]].map(([x, y, z]) => box(2.2, 0, x, y, z, true));
   const flags = [[-44, -16], [44, 18], [18, -44], [-14, 46]].map(([x, z]) => box(9, 62, x, 6, z));
   const make = (o) => {
     dome.uniforms.top.value = o.top; dome.uniforms.mid.value = o.mid; dome.uniforms.low.value = o.low;
-    keys.forEach((k, i) => k.userData.setLevel(o.keys[i] * 1.25));
-    sparks.forEach((s) => s.userData.setLevel(o.spark));
-    flags.forEach((f) => f.userData.setLevel(o.flag));
+    keys.forEach((k, i) => k.material.color.setScalar(o.keys[i]));
+    sparks.forEach((s) => s.material.color.setScalar(o.spark));
+    flags.forEach((f) => f.material.color.setScalar(o.flag));
     const rt = new THREE.WebGLCubeRenderTarget(o.size, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
     new THREE.CubeCamera(0.5, 200, rt).update(renderer, scene);
     return rt;
   };
-  const metalCube = make({ top: 1.25, mid: 0.56, low: 0.7, keys: [2.4, 4.4, 3.7, 1.9, 3.0, 2.0], spark: 5.5, flag: 0.2, size: 512 });
-  const stoneCube = make({ top: 0.95, mid: 0.26, low: 0.06, keys: [4.0, 8.5, 7.0, 3.0, 5.0, 3.4], spark: 18, flag: 0.0, size: 512 });
+  const metalCube = make({ top: 1.3, mid: 0.58, low: 0.72, keys: [2.8, 5.2, 4.4, 2.2, 3.6, 2.4], spark: 7, flag: 0.2, size: 512 });
+  const stoneCube = make({ top: 0.75, mid: 0.17, low: 0.05, keys: [3.4, 7.5, 6.0, 2.4, 4.5, 3.0], spark: 16, flag: 0.0, size: 512 });
   const pmrem = new THREE.PMREMGenerator(renderer);
   const metal = pmrem.fromCubemap(metalCube.texture).texture;
   pmrem.dispose();
@@ -381,11 +369,11 @@ export class Stage {
 
     this.buildTargets();
     this.post = {
-      bright: new Pass(brightFragment, { tColor: { value: null }, threshold: { value: 1.9 } }),
+      bright: new Pass(brightFragment, { tColor: { value: null }, threshold: { value: 1.6 } }),
       blur: new Pass(blurFragment, { tColor: { value: null }, step: { value: new THREE.Vector2() } }),
       average: new Pass(averageFragment, { tFrame: { value: null }, tSum: { value: null }, weight: { value: 1 } }),
       compose: new Pass(composeFragment, {
-        tColor: { value: null }, tGlow: { value: null }, glow: { value: 0.24 }, exposure: { value: 1.0 },
+        tColor: { value: null }, tGlow: { value: null }, glow: { value: 0.35 }, exposure: { value: 1.0 },
         background: { value: new THREE.Color(this.options.background) },
       }),
     };
@@ -453,11 +441,11 @@ export class Stage {
     const f = FINISHES[finish];
     const brushed = !!f.brushed;
     const m = new (brushed ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial)({
-      metalness: 1, roughness: f.roughness, envMap: this.maps.metal, envMapIntensity: 0.94,
+      metalness: 1, roughness: f.roughness, envMap: this.maps.metal, envMapIntensity: 1,
     });
     m.color.setRGB(...METALS[metal].f0, THREE.LinearSRGBColorSpace);
     // Brushed and matte metal scatter the studio's light: a touch less bright than polish.
-    if (finish === 'satin' || finish === 'matte') m.envMapIntensity = 0.76;
+    if (finish === 'satin' || finish === 'matte') m.envMapIntensity = 0.8;
     let map = finishMap(finish);
     if (map && repeat) { map = map.clone(); map.repeat.set(repeat[0], repeat[1]); map.needsUpdate = true; }
     const strength = { hammered: 1.6, satin: 0.14, matte: 0.3 }[finish] ?? 0.3;

@@ -39,8 +39,6 @@ for a pair of rings.
     crevices under the basket, between prongs and halo stones and inside the band are shaded as in
     a photo. A few directions are done per frame and the shading fades in, so a change never
     stalls the turning ring, and it costs nothing afterwards.
-  - Softboxes with soft, diffused edges (bright centre, fading edges) and small crisp lights for
-    sparkle, rendered once into environment maps.
   - A contact shadow baked once per design; glow round the brightest sparkles; Khronos PBR Neutral
     tone mapping (made for product colours); 4× multisampling.
   - The resolution adapts to keep frames near 16 ms, rendering stops when nothing changes or the

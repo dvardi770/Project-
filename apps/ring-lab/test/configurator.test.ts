@@ -137,7 +137,24 @@ describe('ring builder', () => {
     const r = buildRing({ head: 'three-stone', shank: 'classic', carat: 1 });
     const side = r.stones.find((s: { cut: string; role: string; matrices: number[][] }) => s.cut === 'round' && s.matrices.length === 2);
     expect(side).toBeTruthy();
-    for (const m of side.matrices) expect(Math.abs(m[12])).toBeGreaterThan(r.specs.centre.mm[1] / 2);
+    const halfWidth = r.specs.centre.mm[1] / 2;
+    for (const m of side.matrices) {
+      const ds = Math.hypot(m[0], m[1], m[2]);
+      const [x, y] = [m[12], m[13]];
+      // Close beside the centre stone: the side girdle starts just past the centre's.
+      const inner = Math.abs(x) - Math.abs(m[0]) / 2;
+      expect(inner - halfWidth).toBeGreaterThan(0);
+      expect(inner - halfWidth).toBeLessThan(1);
+      // Lower than the centre, leaning outwards with the band.
+      expect(y).toBeLessThan(r.frame.head[1]);
+      expect(Math.sign(m[4])).toBe(Math.sign(x));
+      // Resting on the band: its culet a little above the band's top, not floating.
+      const up = [m[4] / ds, m[5] / ds];
+      const culet = [x + up[0] * cut('round').bottom * ds, y + up[1] * cut('round').bottom * ds];
+      const above = Math.hypot(culet[0], culet[1]) - r.frame.radius;
+      expect(above).toBeGreaterThan(0.2);
+      expect(above).toBeLessThan(1.3);
+    }
     // Side stones about a quarter of the centre's weight each.
     expect(r.specs.accents.carats).toBeGreaterThan(0.3);
     expect(r.specs.accents.carats).toBeLessThan(0.7);

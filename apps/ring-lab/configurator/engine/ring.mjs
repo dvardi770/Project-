@@ -186,41 +186,65 @@ export function buildRing(input = {}) {
     }
   }
 
-  // Three stone: a round stone either side of the centre, a little lower, each in its own prongs.
-  let sideReach = 0;
+  // Three stone: a round stone either side of the centre, lower down on the band's shoulders and
+  // tilted outwards with its curve, each in its own four-prong basket that sits on the band,
+  // their girdles close to the centre stone's.
+  const headReach = head.halo ? clamp(0.15 * Math.min(W, L), 0.9, 1.5) * 1.15 + 0.15 : rp * 2.2;
+  let sideReach = 0, sideFoot = 0, sideRail = null;
   if (head.sides) {
     const ds = clamp(0.62 * Math.min(W, L), 2.6, 6.5);
     const sc = cut('round');
     const sDepth = -sc.bottom * ds, sCrown = sc.top * ds;
     const srp = clamp(0.07 * ds, 0.28, 0.5);
+    const lift = sDepth + 0.95;                       // girdle above the basket's foot
+    const tilt = 0.6;                                 // how far the stones lean with the band
+    const gap = 0.12 + rp * 0.2;                      // side girdle to centre girdle
+    // The centre basket's mid rail, at its widest along x.
+    let inner = 0;
+    for (let deg = 0; deg < 360; deg += 2) inner = Math.max(inner, Math.abs(beside(deg, 0, 0, 0)[0]));
+    const placeAt = (phi) => {
+      const tBand = shank.strands ? shank.strand * 2 : shankShape(shank, phi).t;
+      const rho = R + tBand + lift - 0.22;            // the foot sinks a little into the band
+      const th = tilt * phi;
+      return { phi, th, c: [rho * Math.sin(phi), rho * Math.cos(phi)], right: [Math.cos(th), -Math.sin(th)], up: [Math.sin(th), Math.cos(th)] };
+    };
+    // Lean out along the band until the side stone's inner girdle clears the centre stone.
+    let lo = 0.01, hi = 1.2;
+    for (let k = 0; k < 40; k++) {
+      const mid = (lo + hi) / 2, s = placeAt(mid);
+      if (s.c[0] - s.right[0] * (ds / 2) < inner + gap) lo = mid; else hi = mid;
+    }
+    const s = placeAt(hi);
     for (const sx of [-1, 1]) {
-      const cx = sx * (W / 2 + ds / 2 + rp * 1.2 + 0.15);
-      const phi = Math.asin(clamp(Math.abs(cx) / (R + tTop), 0, 0.9));
-      const yBand = (R + tTop) * Math.cos(phi);
-      const yS = Math.max(yBand + sDepth + 0.55, yGirdle - depth * 0.35);
-      stones.side.push(matrix([1, 0, 0], [0, 1, 0], [0, 0, 1], ds, [cx, yS, 0]));
-      const at = (deg, f, out, y) => {
+      const right = [s.right[0], sx * s.right[1], 0], up = [sx * s.up[0], s.up[1], 0], z = [0, 0, 1];
+      const c = [sx * s.c[0], s.c[1], 0];
+      // A point in the side stone's own frame: x towards its outer side, y up through its table.
+      const local = (lx, ly, lz) => vec.add(vec.add(vec.add(c, vec.scale(right, sx * lx)), vec.scale(up, ly)), vec.scale(z, lz));
+      const at = (deg, f, out, ly) => {
         const a = deg * DEG, r = (ds / 2) * (1 - f * 0.92) + out;
-        return [cx + r * Math.cos(a), y, r * Math.sin(a)];
+        return local(r * Math.cos(a), ly, r * Math.sin(a));
       };
+      stones.side.push(matrix(right, up, z, ds, c));
       for (const deg of [45, 135, 225, 315]) {
         wire(headMesh, curve([
-          at(deg, 0.72, srp * 0.6, yS - sDepth - 0.45),
-          at(deg, 0.5, srp * 1.05, yS - sDepth * 0.5),
-          at(deg, 0, srp * 0.95, yS),
-          at(deg, 0.035, srp * 0.42, yS + sCrown * 0.5 + srp * 0.3),
+          at(deg, 0.72, srp * 0.6, -lift),
+          at(deg, 0.5, srp * 1.05, -sDepth * 0.5),
+          at(deg, 0, srp * 0.95, 0),
+          at(deg, 0.035, srp * 0.42, sCrown * 0.5 + srp * 0.3),
         ], { steps: 7 }), { radius: (t) => srp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(t * 1.4, 1)) - 0.06 * t), sides: 16 });
       }
-      wire(headMesh, Array.from({ length: 48 }, (_, k) => at((k / 48) * 360, 0.5, srp * 1.1, yS - sDepth * 0.5)), { radius: srp * 0.72, closed: true, sides: 12 });
-      wire(headMesh, Array.from({ length: 36 }, (_, k) => at((k / 36) * 360, 0.72, srp * 0.6, yS - sDepth - 0.45)), { radius: srp * 0.85, closed: true, sides: 12 });
+      wire(headMesh, Array.from({ length: 48 }, (_, k) => at((k / 48) * 360, 0.5, srp * 1.1, -sDepth * 0.5)), { radius: srp * 0.72, closed: true, sides: 12 });
+      wire(headMesh, Array.from({ length: 36 }, (_, k) => at((k / 36) * 360, 0.72, srp * 0.6, -lift)), { radius: srp * 0.85, closed: true, sides: 12 });
+      if (sx === 1) sideRail = { x: at(0, 0.5, srp * 1.1, -sDepth * 0.5)[0], y: at(0, 0.5, srp * 1.1, -sDepth * 0.5)[1] };
     }
-    sideReach = ds + rp * 1.2 + 0.4;
+    const outer = s.c[0] + s.right[0] * (ds / 2 + srp) + s.up[0] * sCrown;
+    sideReach = Math.max(0, outer - (W / 2 + headReach));
+    // Where the side basket's foot meets the band, measured along the band.
+    sideFoot = (R + tTop) * Math.sin(s.phi) + (ds / 2) * 0.4 + srp;
   }
 
-  const headReach = head.halo ? clamp(0.15 * Math.min(W, L), 0.9, 1.5) * 1.15 + 0.15 : rp * 2.2;
-
   // ── Shank ──
-  const headHalf = Math.max(0.36 * W + rp * 1.6, head.halo ? 0.2 * W : 0) + 0.25 + (head.sides ? sideReach * 0.8 : 0);   // head's footprint on the band (along x)
+  const headHalf = Math.max(0.36 * W + rp * 1.6, head.halo ? 0.2 * W : 0, sideFoot) + 0.25;   // head's footprint on the band (along x)
   const phiHead = Math.asin(clamp(headHalf / (R + tTop), 0, 0.95));
   const channel = shank.channel ? channelPlaces(R, shank, phiHead) : null;
   if (shank.strands) strandsShank(shankMesh, R, shank);
@@ -229,7 +253,8 @@ export function buildRing(input = {}) {
   if (shank.cathedral) {
     // Shoulders that leave the band and sweep up in an arch to the basket, leaving an open
     // window between arch and band on each side.
-    const rail = { x: 0.27 * W + rp * 1.1, y: yGirdle - depth * 0.5 };
+    // With side stones, the arches rise to the side baskets instead.
+    const rail = sideRail ?? { x: 0.27 * W + rp * 1.1, y: yGirdle - depth * 0.5 };
     paveFrom = cathedralArms(shankMesh, R, shank, phiHead, rail, shank.pave ? stones.accent : null);
   }
   if (shank.pave) paveRows(shankMesh, R, shank, paveFrom, stones.accent);

@@ -296,6 +296,9 @@ setting points at its renders with `renderKey` (`"<collection>/<combo>"`).
 - In the review step the widget shows the photos for the chosen metal and diamond shape, thumbnails
   for the four angles, the 360° video (H.264 MP4, loaded only when opened) and the live 3D view.
   Shapes that were not rendered fall back to the setting's own shape, with a caption saying so.
+  If the collection's manifest cannot be loaded (it is tried again the next time the review opens),
+  the same thumbnails are made from the variant's own photos, its 360° and the 3D viewer. Settings
+  without renders get that gallery too when they have more than one photo or a 360°.
 - `/renders/` answers byte-range requests, which Safari needs to play video.
 
 It fires `jc-added-to-cart`, `jc-checkout` and `jc-error` on the element, and

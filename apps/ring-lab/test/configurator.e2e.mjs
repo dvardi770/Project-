@@ -102,8 +102,9 @@ console.log('ring builder');
     const ruby = p.getByRole('radiogroup', { name: /Centre stone/ }).getByRole('radio', { name: 'Ruby' });
     await ruby.click();
     await ruby.focus();
+    const next = await ruby.evaluate((b) => b.nextElementSibling.dataset.value);
     await p.keyboard.press('ArrowRight');
-    assert.equal(await p.evaluate(() => window.ringBuilder.state.gem), 'pinkdiamond');
+    assert.equal(await p.evaluate(() => window.ringBuilder.state.gem), next);
   });
 
   await test('a shared link opens the same design', async () => {

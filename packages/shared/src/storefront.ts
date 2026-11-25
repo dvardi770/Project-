@@ -45,7 +45,10 @@ export interface RenderSet {
   baseUrl: string;
   /** This setting's entry in the manifest's `combos` (its `id`). */
   combo: string;
-  /** The live 3D viewer page. Options go in the query: `?embed&studio=white&head=…&shank=…&metal=…&stone=…&shape=…`. */
+  /**
+   * The live 3D viewer page (the same engine as the photos and video). Options go in the query:
+   * `?embed&combo=…&metal=…&shape=…&colour=…&rotate=1`.
+   */
   viewerUrl: string;
 }
 
@@ -60,8 +63,13 @@ export interface RenderManifest {
   shapes: Record<string, { label: string }>;
   combos: {
     id: string;
-    head: number;
-    shank: number;
+    /** A ring from the jeweller's CAD files (head and shank: indices into rings.json), or a design made from measurements. */
+    kind?: 'cad' | 'design';
+    head?: number;
+    shank?: number;
+    /** For designs: the ring builder's options (head, shank, shape, carat…). */
+    design?: Record<string, unknown>;
+    label?: string;
     headLabel: string;
     shankLabel: string;
     designedShape: string;

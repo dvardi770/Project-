@@ -29,7 +29,7 @@ const variant = (id, metal, price) => ({ id, metal, metalWeightGrams: 3.2, video
 const SETTINGS = [
   { id: 'set-1', sku: 'SOL-1', name: 'Classic Solitaire', description: null, style: 'SOLITAIRE', compatibleShapes: ['ROUND', 'OVAL'], centerCarat: { min: 0.5, max: 3 }, ringSize: { min: 4, max: 9 }, leadTimeDays: 14, video360Url: 'https://v360.ringbuilder.test/sol-1', thumbnailUrl: img('sol'), sideStones: [], variants: [variant('v-wg', 'WHITE_GOLD_14K', 1000), variant('v-pt', 'PLATINUM_950', 2000)], priceFrom: usd(1000) },
   { id: 'set-2', sku: 'HALO-1', name: 'Round Halo', description: null, style: 'HALO', compatibleShapes: ['ROUND'], centerCarat: { min: 0.9, max: 1.2 }, ringSize: { min: null, max: null }, leadTimeDays: null, video360Url: null, thumbnailUrl: img('halo'), sideStones: [], variants: [variant('v-halo', 'PLATINUM_950', 1500)], priceFrom: usd(1500),
-    renders: { baseUrl: 'https://renders.ringbuilder.test/sample', combo: 'round-halo', viewerUrl: 'https://renders.ringbuilder.test/sample/index.html' } },
+    renders: { baseUrl: 'https://renders.ringbuilder.test/sample', combo: 'round-halo', viewerUrl: 'https://renders.ringbuilder.test/sample/viewer.html' } },
   { id: 'set-3', sku: 'XSS', name: '<img src=x onerror="window.__xss=1">Vintage', description: null, style: 'VINTAGE', compatibleShapes: ['ROUND'], centerCarat: { min: 0.5, max: 2 }, ringSize: { min: 4, max: 9 }, leadTimeDays: null, video360Url: 'javascript:window.__xss=1', thumbnailUrl: 'javascript:window.__xss=1', sideStones: [], variants: [variant('v-vin', 'ROSE_GOLD_14K', 1200)], priceFrom: usd(1200) },
 ];
 const DIAMONDS = Array.from({ length: 30 }, (_, i) => ({
@@ -402,8 +402,8 @@ await scenario('review shows rendered photos from four angles, a 360° video and
   assert.equal(await hero.locator('video').getAttribute('poster'), `${base}/spin-poster.webp`);
   await w(page).getByRole('button', { name: 'Live 3D' }).click();
   const src = await hero.locator('iframe').getAttribute('src');
-  assert.match(src, /^https:\/\/renders\.ringbuilder\.test\/sample\/index\.html\?embed&/);
-  assert.match(src, /head=1&shank=1&metal=white&stone=diamond&shape=round/);
+  assert.match(src, /^https:\/\/renders\.ringbuilder\.test\/sample\/viewer\.html\?embed&/);
+  assert.match(src, /combo=round-halo&metal=white&shape=round&colour=white&rotate=1/);
   await w(page).getByText('Rendered from the design files.').waitFor();
   await shot(page, '3-review-rendered');
 });

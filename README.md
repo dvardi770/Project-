@@ -280,12 +280,16 @@ priced or checked by the API, and the cart hand-off is not yet wired to the stor
 
 ### Rendered photos, 360° video and 3D
 
-A setting can be rendered from the jeweller's CAD files with `apps/ring-lab` (see its README):
-photos from four angles (angled, front, side, top) and a 360° turntable video on white, for every
-metal, centre-stone shape and diamond colour, plus a live 3D viewer. The API serves a folder of
+A setting can be rendered with `apps/ring-lab` (see its README), from the jeweller's CAD files or
+from a design made from measurements: photos from four angles (angled, front, side, top) and a
+360° turntable video on white, for every metal, centre-stone shape and diamond colour, plus a live
+3D viewer. Photos, video and 3D all come from the ring builder's engine, so they match the 3D
+builders. The API serves a folder of
 render collections (`RENDERS_DIR`, at `/renders/`, or from a CDN with `RENDERS_PUBLIC_URL`), and a
 setting points at its renders with `renderKey` (`"<collection>/<combo>"`).
 
+- A collection holds `media/` (manifest, photos, videos), `viewer.html` with its engine (`engine/*.mjs`)
+  and, for CAD rings, `rings.json` and `rings.b64.txt`.
 - `GET /api/v1/settings` then returns `renders` (`baseUrl`, `combo`, `viewerUrl`) for the setting, and
   fills variants that have no photos of their own with the rendered ones (platinum and palladium use
   the white-metal renders).

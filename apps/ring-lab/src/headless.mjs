@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const TYPES = {
-  '.html': 'text/html', '.json': 'application/json', '.txt': 'text/plain', '.png': 'image/png',
+  '.html': 'text/html', '.mjs': 'text/javascript', '.json': 'application/json', '.txt': 'text/plain', '.png': 'image/png',
   '.webp': 'image/webp', '.jpg': 'image/jpeg', '.mp4': 'video/mp4',
 };
 // pnpm links this package's dependencies here.
@@ -24,7 +24,7 @@ const modules = fileURLToPath(new URL('../node_modules/', import.meta.url));
  * @param {string} dir output folder of convert.mjs
  * @param {{ width: number, height: number, query?: string }} viewport CSS pixels; the canvas fills it in embed mode
  */
-export async function openViewer(dir, { width, height, query = '?embed&studio=white' }) {
+export async function openViewer(dir, { width, height, query = '?embed&studio=white', page: pageName = '', ready = () => window.ringViewer }) {
   const root = resolve(dir);
   const server = createServer((req, res) => {
     let path = decodeURIComponent(req.url.split('?')[0]);
@@ -53,8 +53,8 @@ export async function openViewer(dir, { width, height, query = '?embed&studio=wh
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
   page.on('pageerror', (e) => console.error('viewer error:', e.message));
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(`http://127.0.0.1:${server.address().port}/${query}`);
-  await page.waitForFunction(() => window.ringViewer, null, { timeout: 180_000 });
+  await page.goto(`http://127.0.0.1:${server.address().port}/${pageName}${query}`);
+  await page.waitForFunction(ready, null, { timeout: 180_000 });
   return {
     page,
     async close() { await browser.close(); server.close(); },

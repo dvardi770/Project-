@@ -26,12 +26,13 @@ for the layout, purchase flow and store setup.
   test:e2e` drives both pages in Chromium.
 - `apps/ring-lab` — 3D configurator and render studio (plain ESM JavaScript, not typechecked): `.3dm`
   converter, compact mesh format, head/shank fit check, three.js viewer (photo mode, embed mode,
-  `window.ringViewer` API), `renderMedia.mjs` (four angles + 360° MP4 per metal/shape/colour, needs
-  ffmpeg) and `gallery.html`. Never commit customer CAD files or rendered media. The viewer is one HTML
-  file with its own copy of the mesh decoder in `src/meshData.mjs`; change both together.
+  `window.ringViewer` API), `renderMedia.mjs` (four angles + 360° MP4 per metal/shape/colour, made with
+  the configurator engine through `configurator/viewer.html`; needs ffmpeg) and `gallery.html`. Never
+  commit customer CAD files or rendered media. The mesh decoder lives in `configurator/engine/meshDecode.mjs`
+  (re-exported by `src/meshData.mjs`); the CAD lab viewer (one HTML file) has its own copy; change both together.
 - Renders reach the ring builder through `VirtualSetting.renderKey` ("<collection>/<combo>"), the API's
   `RENDERS_DIR` / `RENDERS_PUBLIC_URL` and `/renders/*`, and `Setting.renders` / `RenderManifest` in
-  `packages/shared/src/storefront.ts`.
+  `packages/shared/src/storefront.ts`. The widget's live 3D frames the collection's `viewer.html`.
 - `apps/dashboard` — Next.js (App Router) merchant admin: markup matrix, order fulfilment, billing
   (Shopify Billing API for Shopify stores, Stripe Subscriptions otherwise). Server code reads the
   database directly through `@jewelry/db`; client components must import `lib/markup-shared.ts`, never

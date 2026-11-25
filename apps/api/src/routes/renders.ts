@@ -21,6 +21,8 @@ const TYPES: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
+  // The 3D viewer's engine (ES modules).
+  '.mjs': 'text/javascript; charset=utf-8',
 };
 
 export async function renderRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -48,7 +50,7 @@ export async function renderRoutes(app: FastifyInstance, deps: AppDeps): Promise
     reply
       .header('etag', etag)
       // Manifests and pages change when a collection is re-rendered; photos and video rarely do.
-      .header('cache-control', /\.(json|html|txt)$/.test(path) ? 'public, max-age=300' : 'public, max-age=86400')
+      .header('cache-control', /\.(json|html|txt|mjs)$/.test(path) ? 'public, max-age=300' : 'public, max-age=86400')
       .header('accept-ranges', 'bytes')
       .header('x-content-type-options', 'nosniff')
       .header('cross-origin-resource-policy', 'cross-origin')

@@ -201,7 +201,9 @@ describe.skipIf(!url)('storefront API', () => {
     mkdirSync(variantDir, { recursive: true });
     writeFileSync(join(variantDir, 'spin.mp4'), spin);
     writeFileSync(join(variantDir, 'threequarter-half.webp'), 'webp');
-    writeFileSync(join(rendersDir, 'sample', 'index.html'), '<title>3D</title><p>viewer</p>');
+    writeFileSync(join(rendersDir, 'sample', 'viewer.html'), '<title>3D</title><p>viewer</p>');
+    mkdirSync(join(rendersDir, 'sample', 'engine'), { recursive: true });
+    writeFileSync(join(rendersDir, 'sample', 'engine', 'stage.mjs'), 'export const stage = 1;');
     writeFileSync(join(rendersDir, 'sample', '.secret.json'), '{}');
     writeFileSync(
       join(rendersDir, 'sample', 'media', 'manifest.json'),
@@ -424,7 +426,7 @@ describe.skipIf(!url)('storefront API', () => {
       expect(solitaire.renders).toBeNull();
       expect(halo.renders.combo).toBe('round-halo');
       expect(halo.renders.baseUrl).toMatch(/^http:\/\/localhost(:\d+)?\/renders\/sample$/);
-      expect(halo.renders.viewerUrl).toBe(`${halo.renders.baseUrl}/index.html`);
+      expect(halo.renders.viewerUrl).toBe(`${halo.renders.baseUrl}/viewer.html`);
       // Platinum is not rendered separately; it looks like white metal, so the white renders are used.
       const media = `${halo.renders.baseUrl}/media/round-halo/white-round-white`;
       expect(halo.variants[0].imageUrls).toEqual([`${media}/threequarter-half.webp`, `${media}/front-half.webp`]);
@@ -453,10 +455,13 @@ describe.skipIf(!url)('storefront API', () => {
       expect((await app.inject({ url: '/renders/sample/media/round-halo/white-round-white/spin.mp4', headers: { range: 'bytes=100-' } })).statusCode).toBe(416);
     });
 
-    it('wraps the 3D viewer page in a document', async () => {
-      const page = await app.inject({ url: '/renders/sample/index.html' });
+    it('wraps the 3D viewer page in a document and serves its engine as JavaScript', async () => {
+      const page = await app.inject({ url: '/renders/sample/viewer.html' });
       expect(page.statusCode).toBe(200);
       expect(page.body).toMatch(/^<!doctype html>.*<body><title>3D<\/title>/s);
+      const engine = await app.inject({ url: '/renders/sample/engine/stage.mjs' });
+      expect(engine.statusCode).toBe(200);
+      expect(engine.headers['content-type']).toMatch(/^text\/javascript/);
     });
 
     it('serves nothing outside the folder, hidden or of unknown type', async () => {

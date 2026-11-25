@@ -335,7 +335,7 @@ export class Stage {
    */
   constructor(container, options = {}) {
     this.container = container;
-    this.options = { background: '#ffffff', autoRotate: true, rotateSpeed: 3.2, ...options };
+    this.options = { background: '#ffffff', autoRotate: true, rotateSpeed: 3.2, adaptive: true, ...options };
     const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -364,8 +364,12 @@ export class Stage {
     controls.addEventListener('change', () => { this.moved = true; });
 
     this.maps = studioMaps(renderer);
+    // The turntable turns the ring and its shadow under fixed lights and camera, as on a
+    // photographer's turntable (the 360° video); the root holds the design.
+    this.turntable = new THREE.Group();
     this.root = new THREE.Group();
-    this.scene.add(this.root);
+    this.turntable.add(this.root);
+    this.scene.add(this.turntable);
 
     this.buildTargets();
     this.post = {
@@ -378,7 +382,7 @@ export class Stage {
       }),
     };
     this.shadow = this.makeShadow();
-    this.scene.add(this.shadow.plane);
+    this.turntable.add(this.shadow.plane);
 
     this.gemMaterials = new Map();
     this.metalMaterials = new Map();
@@ -515,6 +519,8 @@ export class Stage {
    */
   setDesign({ groups, frame }, { refit = false } = {}) {
     for (const o of this.objects) { this.root.remove(o); if (o.userData.owned) o.geometry.dispose(); }
+    this.turntable.rotation.y = 0;
+    this.turntable.updateMatrixWorld(true);
     const built = this.buildGroups(groups);
     for (const parent of built.parents) this.root.add(parent);
     this.objects = [...built.meshes, ...built.parents];
@@ -783,6 +789,8 @@ export class Stage {
       overview: { box: whole, target: centre, polar: 72, azimuth: 32, margin: 0.9 },
       head: { box: headBox, target: head, polar: 64, azimuth: 24, margin: 0.62 },
       top: { box: headBox, target: head, polar: 12, azimuth: 0, margin: 0.6 },
+      // The whole ring from above (a product photo's top view).
+      above: { box: whole, target: new THREE.Vector3(head.x, centre.y, head.z), polar: 8, azimuth: 0, margin: 0.9 },
       side: { box: whole, target: centre, polar: 84, azimuth: 90, margin: 0.86 },
       front: { box: whole, target: centre, polar: 86, azimuth: 0, margin: 0.86 },
       shank: { box: whole, target: centre, polar: 62, azimuth: 52, margin: 0.86 },
@@ -803,6 +811,8 @@ export class Stage {
     const to = new THREE.Spherical(d, (polar * Math.PI) / 180, (azimuth * Math.PI) / 180);
     if (keepAzimuth) to.theta = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target)).theta;
     if (!animate) {
+      // A jump cancels any move still under way.
+      this.tween = null;
       this.controls.target.copy(target);
       this.camera.position.copy(new THREE.Vector3().setFromSpherical(to).add(target));
       this.controls.update();
@@ -861,6 +871,21 @@ export class Stage {
   }
 
   setAutoRotate(on) { this.wantsRotate = on; this.controls.autoRotate = on; this.wake(); }
+
+  /** Turns the ring (and its shadow) on the turntable, in radians. */
+  setTurn(angle) {
+    this.turntable.rotation.y = angle;
+    this.turntable.updateMatrixWorld(true);
+    this.wake();
+  }
+
+  /** Finishes the occlusion bake at once and shows it in full (for rendering photos). */
+  settleOcclusion() {
+    while (this.ao?.job && this.ao.job.fade === null) this.stepOcclusion(performance.now());
+    if (this.ao?.job) this.ao.job = null;
+    this.aoUniforms.aoAmount.value = 1;
+    this.wake();
+  }
 
   setBackground(css) {
     this.options.background = css;
@@ -1054,7 +1079,7 @@ export class Stage {
     this.stats.fps = this.frameTimes.length;
     this.stats.ratio = this.ratio;
     this.stats.samples = this.samples;
-    if (!moving || this.frameTimes.length < 20) return;
+    if (!moving || !this.options.adaptive || this.frameTimes.length < 20) return;
     const span = (this.frameTimes[this.frameTimes.length - 1] - this.frameTimes[0]) / (this.frameTimes.length - 1);
     if (!this.lastAdapt) this.lastAdapt = now;
     if (now - this.lastAdapt < 1200) return;

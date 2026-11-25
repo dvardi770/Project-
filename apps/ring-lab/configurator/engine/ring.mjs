@@ -24,6 +24,7 @@ export const HEADS = {
   bezel:          { label: 'Bezel', prongs: 0, bezel: 'full' },
   'secret-bezel': { label: 'Secret Bezel', prongs: 4, bezel: 'secret' },
   tulip:          { label: 'Tulip', prongs: 6, tulip: true },
+  'three-stone':  { label: 'Three Stone', prongs: 4, sides: true },
 };
 
 // w: band width (along the finger) and t: thickness, each [at the bottom, at the head].
@@ -81,7 +82,7 @@ export function buildRing(input = {}) {
   const crownH = centre.top * W;         // girdle middle to table
 
   const headMesh = new Mesh(), shankMesh = new Mesh();
-  const stones = { centre: [], accent: [], channel: [] };
+  const stones = { centre: [], accent: [], channel: [], side: [] };
 
   // The band's top under the head, and how high the stone sits above it.
   const tTop = shank.strands ? shank.strand * 2 : shank.t[1];
@@ -185,10 +186,41 @@ export function buildRing(input = {}) {
     }
   }
 
+  // Three stone: a round stone either side of the centre, a little lower, each in its own prongs.
+  let sideReach = 0;
+  if (head.sides) {
+    const ds = clamp(0.62 * Math.min(W, L), 2.6, 6.5);
+    const sc = cut('round');
+    const sDepth = -sc.bottom * ds, sCrown = sc.top * ds;
+    const srp = clamp(0.07 * ds, 0.28, 0.5);
+    for (const sx of [-1, 1]) {
+      const cx = sx * (W / 2 + ds / 2 + rp * 1.2 + 0.15);
+      const phi = Math.asin(clamp(Math.abs(cx) / (R + tTop), 0, 0.9));
+      const yBand = (R + tTop) * Math.cos(phi);
+      const yS = Math.max(yBand + sDepth + 0.55, yGirdle - depth * 0.35);
+      stones.side.push(matrix([1, 0, 0], [0, 1, 0], [0, 0, 1], ds, [cx, yS, 0]));
+      const at = (deg, f, out, y) => {
+        const a = deg * DEG, r = (ds / 2) * (1 - f * 0.92) + out;
+        return [cx + r * Math.cos(a), y, r * Math.sin(a)];
+      };
+      for (const deg of [45, 135, 225, 315]) {
+        wire(headMesh, curve([
+          at(deg, 0.72, srp * 0.6, yS - sDepth - 0.45),
+          at(deg, 0.5, srp * 1.05, yS - sDepth * 0.5),
+          at(deg, 0, srp * 0.95, yS),
+          at(deg, 0.035, srp * 0.42, yS + sCrown * 0.5 + srp * 0.3),
+        ], { steps: 7 }), { radius: (t) => srp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(t * 1.4, 1)) - 0.06 * t), sides: 16 });
+      }
+      wire(headMesh, Array.from({ length: 48 }, (_, k) => at((k / 48) * 360, 0.5, srp * 1.1, yS - sDepth * 0.5)), { radius: srp * 0.72, closed: true, sides: 12 });
+      wire(headMesh, Array.from({ length: 36 }, (_, k) => at((k / 36) * 360, 0.72, srp * 0.6, yS - sDepth - 0.45)), { radius: srp * 0.85, closed: true, sides: 12 });
+    }
+    sideReach = ds + rp * 1.2 + 0.4;
+  }
+
   const headReach = head.halo ? clamp(0.15 * Math.min(W, L), 0.9, 1.5) * 1.15 + 0.15 : rp * 2.2;
 
   // ── Shank ──
-  const headHalf = Math.max(0.36 * W + rp * 1.6, head.halo ? 0.2 * W : 0) + 0.25;   // head's footprint on the band (along x)
+  const headHalf = Math.max(0.36 * W + rp * 1.6, head.halo ? 0.2 * W : 0) + 0.25 + (head.sides ? sideReach * 0.8 : 0);   // head's footprint on the band (along x)
   const phiHead = Math.asin(clamp(headHalf / (R + tTop), 0, 0.95));
   const channel = shank.channel ? channelPlaces(R, shank, phiHead) : null;
   if (shank.strands) strandsShank(shankMesh, R, shank);
@@ -205,12 +237,12 @@ export function buildRing(input = {}) {
 
   // ── Specs ──
   const gem = GEMS[o.gem], accentGem = GEMS[o.accentGem];
-  const accentCarats = sumCarats(stones.accent, 'round-accent', accentGem.density) + sumCarats(stones.channel, 'princess-accent', accentGem.density);
+  const accentCarats = sumCarats(stones.accent, 'round-accent', accentGem.density) + sumCarats(stones.channel, 'princess-accent', accentGem.density) + sumCarats(stones.side, 'round', accentGem.density);
   const centreCarats = caratsOf(o.shape, W, gem.density);
   const headVolume = headMesh.volume, shankVolume = shankMesh.volume;
   const specs = {
     centre: { shape: o.shape, label: SHAPES[o.shape].label, size: o.carat, carats: round(centreCarats, 2), mm: [round(L, 2), round(W, 2)], gem: o.gem },
-    accents: { count: stones.accent.length + stones.channel.length, carats: round(accentCarats, 2), gem: o.accentGem },
+    accents: { count: stones.accent.length + stones.channel.length + stones.side.length, carats: round(accentCarats, 2), gem: o.accentGem },
     totalCarats: round(centreCarats + accentCarats, 2),
     metal: {
       head: { metal: o.headMetal, label: metalLabel(o.headMetal, o.karat), grams: round(gramsOf(headVolume, o.headMetal, o.karat), 2) },
@@ -227,6 +259,7 @@ export function buildRing(input = {}) {
       { cut: o.shape, gem: o.gem, role: 'centre', matrices: stones.centre },
       { cut: 'round-accent', gem: o.accentGem, role: 'accent', matrices: stones.accent },
       { cut: 'princess-accent', gem: o.accentGem, role: 'accent', matrices: stones.channel },
+      { cut: 'round', gem: o.accentGem, role: 'centre', matrices: stones.side },
     ].filter((s) => s.matrices.length),
     specs,
     frame: {
@@ -238,8 +271,8 @@ export function buildRing(input = {}) {
       stone: [L, W],
       // The head's extent, for close views of it.
       headBox: {
-        min: [-(W / 2 + headReach), bandTop - 0.8, -(L / 2 + headReach)],
-        max: [W / 2 + headReach, yGirdle + crownH + (head.prongs ? rp : 0.3), L / 2 + headReach],
+        min: [-(W / 2 + headReach + sideReach), bandTop - 0.8, -(L / 2 + headReach)],
+        max: [W / 2 + headReach + sideReach, yGirdle + crownH + (head.prongs ? rp : 0.3), L / 2 + headReach],
       },
     },
   };
@@ -434,6 +467,8 @@ function paveRows(m, R, shank, phiFrom, out) {
       phis.push(phi);
       phi += pitch / (R + shankShape(shank, phi).t);
     }
+    // No room for stones (a wide head, or arches reaching past the pavé's end): nothing to set.
+    if (!phis.length) continue;
     for (const v of offsets) {
       for (const p of phis) {
         const { w, t } = shankShape(shank, p);

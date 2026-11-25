@@ -188,7 +188,6 @@ state.shape = combos[0].designedShape;
 const shapesOf = (c) => [...new Set([c.designedShape, ...Object.values(c.variants).map((v) => v.shape)])];
 const variantOf = () => combos[state.combo].variants[`${state.metal}.${state.shape}.${state.colour}`] ?? null;
 const url = (v, file) => `media/${v.dir}/${file}`;
-const STONE_FOR_COLOUR = { white: 'diamond', yellow: 'yellow', pink: 'pinkdiamond', blue: 'bluediamond' };
 
 // ─── Options ───────────────────────────────────────────────────────────────
 function optButton(container, { label, sub, pressed, onPick, swatch, icon, preload }) {
@@ -225,13 +224,13 @@ function warm(src) {
 
 function renderOptions() {
   const c = combos[state.combo];
-  document.getElementById('title').textContent = `${c.headLabel} on ${c.shankLabel.toLowerCase()}`;
+  document.getElementById('title').textContent = c.label ?? `${c.headLabel} on ${c.shankLabel.toLowerCase()}`;
   document.getElementById('madeFrom').textContent = `Head and band from your CAD files, joined as the fit check allows`;
   const combosEl = document.getElementById('combos');
   combosEl.replaceChildren(...combos.map((x, i) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = x.headLabel;
+    b.textContent = x.kind === "design" ? x.label : x.headLabel;
     b.setAttribute('aria-pressed', String(i === state.combo));
     b.addEventListener('click', () => { state.combo = i; state.shape = x.designedShape; update(); });
     return b;
@@ -276,7 +275,7 @@ async function showImage(v, view) {
   const full = url(v, `${view}.webp`), half = url(v, `${view}-half.webp`);
   let img = current?.tagName === 'IMG' ? current : null;
   const next = new Image();
-  next.alt = `${combos[state.combo].headLabel} in ${manifest.metals[state.metal].label} with a ${manifest.colours[state.colour].label.toLowerCase()} ${manifest.shapes[state.shape]?.label.toLowerCase() ?? ''} diamond, ${manifest.views.find((x) => x.id === view)?.label.toLowerCase()} view`;
+  next.alt = `${combos[state.combo].label ?? combos[state.combo].headLabel} in ${manifest.metals[state.metal].label} with a ${manifest.colours[state.colour].label.toLowerCase()} ${manifest.shapes[state.shape]?.label.toLowerCase() ?? ''} diamond, ${manifest.views.find((x) => x.id === view)?.label.toLowerCase()} view`;
   next.srcset = `${half} ${manifest.halfSize}w, ${full} ${manifest.imageSize}w`;
   next.sizes = '(max-width: 860px) 100vw, 640px';
   next.src = full;
@@ -304,18 +303,17 @@ function showVideo(v) {
 }
 
 let frame = null;
+// Live 3D: the same engine as the photos and video (viewer.html beside this page), showing this
+// combo in the chosen metal, shape and colour.
 function show3d() {
   const c = combos[state.combo];
-  const options = { head: c.head, shank: c.shank, metal: state.metal, stone: STONE_FOR_COLOUR[state.colour], shape: state.shape, studio: 'white' };
-  if (frame) {
-    frame.contentWindow?.postMessage({ type: 'ring-viewer:set', options }, '*');
-    setStage(frame);
-    return;
+  const q = new URLSearchParams({ combo: c.id, metal: state.metal, shape: state.shape, colour: state.colour, rotate: '1' });
+  const src = `viewer.html?embed&${q}`;
+  if (!frame) {
+    frame = document.createElement('iframe');
+    frame.title = 'Live 3D view of the ring';
   }
-  frame = document.createElement('iframe');
-  frame.title = 'Live 3D view of the ring';
-  const q = new URLSearchParams({ embed: '', studio: 'white', rotate: '1', head: c.head, shank: c.shank, metal: state.metal, stone: options.stone, shape: state.shape });
-  frame.src = `index.html?${q.toString().replace('embed=&', 'embed&')}`;
+  if (frame.getAttribute('src') !== src) frame.setAttribute('src', src);
   setStage(frame);
 }
 

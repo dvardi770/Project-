@@ -11,6 +11,10 @@ import { Mesh, band } from '../configurator/engine/geometry.mjs';
 import { priceRing, priceBand, centreFromList } from '../configurator/engine/pricing.mjs';
 // @ts-expect-error plain JavaScript module without type declarations
 import { usToDiameter, euToDiameter } from '../configurator/engine/materials.mjs';
+// @ts-expect-error plain JavaScript module without type declarations
+import { restingPose, samplePoints, posed } from '../configurator/engine/pose.mjs';
+// @ts-expect-error plain JavaScript module without type declarations
+import { shapeOfName } from '../configurator/engine/cad.mjs';
 
 type Geometry = { positions: Float32Array; normals: Float32Array; index: Uint16Array | Uint32Array };
 
@@ -129,6 +133,16 @@ describe('ring builder', () => {
     expect(size9.frame.radius - size4.frame.radius).toBeCloseTo((usToDiameter(9) - usToDiameter(4)) / 2, 1);
   });
 
+  it('sets side stones beside the centre in a three-stone head', () => {
+    const r = buildRing({ head: 'three-stone', shank: 'classic', carat: 1 });
+    const side = r.stones.find((s: { cut: string; role: string; matrices: number[][] }) => s.cut === 'round' && s.matrices.length === 2);
+    expect(side).toBeTruthy();
+    for (const m of side.matrices) expect(Math.abs(m[12])).toBeGreaterThan(r.specs.centre.mm[1] / 2);
+    // Side stones about a quarter of the centre's weight each.
+    expect(r.specs.accents.carats).toBeGreaterThan(0.3);
+    expect(r.specs.accents.carats).toBeLessThan(0.7);
+  });
+
   it('counts accent stones and their carats', () => {
     const plain = buildRing({ shank: 'classic', head: 'four-prong' });
     expect(plain.specs.accents.count).toBe(0);
@@ -187,6 +201,40 @@ describe('band builder', () => {
     }
     expect(bestN).toBeGreaterThan(0.5);
     expect(best).toBeGreaterThan(euToDiameter(52) / 2);
+  });
+});
+
+describe('poses for photos and the 360° video', () => {
+  const asDesign = (r: ReturnType<typeof buildRing>) => ({
+    groups: [{ parts: [{ geometry: r.metal.shank }, { geometry: r.metal.head }], stones: r.stones }],
+    frame: r.frame,
+  });
+
+  it('lays a ring on its side, resting on both its band and its head', () => {
+    for (const head of ['four-prong', 'halo', 'three-stone']) {
+      const ring = buildRing({ head, shank: 'pave' });
+      const design = asDesign(ring);
+      const lying = posed(design, restingPose(design, ring.frame.radius + 0.3));
+      const pts = samplePoints(lying) as number[][];
+      const lowest = Math.min(...pts.map((p) => p[1]));
+      expect(lowest, head).toBeCloseTo(0, 3);
+      // The finger axis now stands almost upright (tipped only as far as the head needs).
+      const m = lying.groups[0].matrix;
+      expect(Math.abs(m[9]), head).toBeGreaterThan(0.7);
+      // Head and band both touch the table: the lowest head point is as low as the band's.
+      const upright = samplePoints(design) as number[][];
+      const headLow = Math.min(...pts.filter((_, i) => upright[i][1] > ring.frame.radius + 0.3).map((p) => p[1]));
+      expect(headLow, head).toBeLessThan(0.05);
+    }
+  });
+});
+
+describe('CAD rings', () => {
+  it('knows a stone block’s shape from its name', () => {
+    expect(shapeOfName('Diamond_Oval')).toBe('oval');
+    expect(shapeOfName('Diamond_Cushion')).toBe('cushion');
+    expect(shapeOfName('Radiant 7x5')).toBe('cushion');
+    expect(shapeOfName('Block 12')).toBeNull();
   });
 });
 

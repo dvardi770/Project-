@@ -124,14 +124,24 @@ in the main README).
     change choices with `postMessage({ type: 'ring-viewer:set', options })`.
   - `window.ringViewer` lets scripts set a configuration (`show`, `prepare`), render a still
     right away (`renderNow`), path trace it (`photo`) and capture it (`capture`).
-- **Render studio** (`src/renderMedia.mjs`): for every fitting head and shank, in each metal,
-  shape and colour, four photos of the ring standing (WebP, 1200 px and half size) and a 360°
-  turntable of it lying down (720 px, 180 frames at 30 fps, H.264 MP4 at CRF 18 with
-  `+faststart`, no audio, a seamless loop, plus its first frame as a poster), and
-  `media/manifest.json`. Photos are also path traced by default (`--image-quality photo`).
-  Variants render most-wanted first; finished ones are skipped on a re-run. A run adds to the
-  manifest rather than replacing it, so a long job can be split (one run per shape, or a metal
-  added later) and every finished variant stays listed. Needs ffmpeg.
+- **Render studio** (`src/renderMedia.mjs`): photos and 360° videos made with the ring
+  builder's engine (`configurator/viewer.html`), so the shop's photos, video and live 3D match
+  the builders. It renders the CAD rings in the folder (`rings.json`: each ring's own head and
+  shank) and designs made from measurements (`designs.json`: the ring builder's options). A CAD
+  ring keeps its metal exactly as designed; each of its stones is replaced by the builder's cut
+  of the same shape in the same seat (`configurator/engine/cad.mjs`), so stones sparkle as in
+  the builder and a centre stone of another shape can sit in the same seat. For each metal,
+  shape and colour: four photos of the ring standing (WebP, 1200 px and half size) and a 360°
+  turntable of it lying on its side, resting on band and head (720 px, 150 frames at 30 fps,
+  H.264 MP4 at CRF 18 with `+faststart`, no audio, a seamless loop starting with the stone towards
+  the camera, plus that first frame as a poster), and `media/manifest.json`. The folder gets
+  `viewer.html`, its engine and `gallery.html`, so it is a complete render collection. Variants
+  render most-wanted first; finished ones are skipped on a re-run. A run adds to the manifest
+  rather than replacing it, so a long job can be split (one run per shape, or a metal added
+  later) and every finished variant stays listed. Needs ffmpeg.
+- **Live 3D for the ring builder** (`configurator/viewer.html`): one combo of a collection on the
+  builder's stage, `viewer.html?embed&combo=…&metal=…&shape=…&colour=…&rotate=1`, read from the
+  collection's manifest. The media renderer drives the same page (`window.studio`).
 - **Render studio page** (`viewer/gallery.html`): a product page with the photos, thumbnails
   for the four angles, the 360° video and live 3D, and choices for setting, metal, shape and
   colour. Combinations not yet rendered are shown in live 3D.
@@ -147,7 +157,11 @@ in the main README).
 node src/convert.mjs path/to/rings.config.json out
 node src/fitCheck.mjs out
 node src/renderMedia.mjs out --metals white,yellow,rose --colours white,yellow,pink,blue --shapes all
-npx serve out          # or any static server; open index.html (3D) or gallery.html (render studio)
+npx serve out          # or any static server; open index.html (CAD lab), gallery.html (render studio)
+
+# Settings made from measurements: a folder with designs.json, e.g.
+# [{ "id": "round-halo", "label": "Round Halo", "design": { "head": "halo", "shank": "classic", "shape": "round", "carat": 1 } }]
+node src/renderMedia.mjs catalog --metals white,yellow,rose --colours white
 ```
 
 To serve renders to the ring builder, put each output folder in the API's `RENDERS_DIR` under a
@@ -165,11 +179,11 @@ collection name and set the setting's `renderKey` to `"<collection>/<combo id fr
 
 ## Speed
 
-Measured on the build machine, which has no GPU (Chromium's software renderer, 4 cores): a
-1200 px photo with 25 samples takes about 10 s, a 720 px turntable frame with 13 samples about
-2.4 s, so one variant (four photos and a 180-frame video) about 8 minutes, most of it the video.
-The stones are most of the cost (the metal alone is about a fifth). A machine with a GPU should
-be many times faster; pass Chromium flags that enable it through `RING_LAB_CHROMIUM_ARGS`.
+Measured on the build machine, which has no GPU (Chromium's software renderer, 4 cores), with
+the builder's engine: one variant (four 1200 px photos with 10 refinement steps each, and a
+150-frame 720 px video) takes 1–2.5 minutes; the two CAD rings and eight designs in three metals
+(30 variants) took about half an hour. The stones are most of the cost. A machine with a GPU
+should be many times faster; pass Chromium flags that enable it through `RING_LAB_CHROMIUM_ARGS`.
 
 The catalogue renderer serves the viewer's libraries from `node_modules`, so it needs no
 internet access. It needs Playwright's Chromium (`npx playwright install chromium` on a new

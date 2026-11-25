@@ -26,9 +26,6 @@ export function renderMetal(metal: string, available: string[]): string | null {
   return want === 'platinum' && available.includes('white') ? 'white' : null;
 }
 
-/** Viewer stones for the manifest's diamond colours. */
-const STONE_FOR_COLOUR: Record<string, string> = { white: 'diamond', yellow: 'yellow', pink: 'pinkdiamond', blue: 'bluediamond' };
-
 export interface RenderedRing {
   /** Folder of this variant's files. */
   base: string;
@@ -67,9 +64,9 @@ export function pickRendered(
   const fallback = variants[`${metalKey}.${combo.designedShape}.${colour}`] ?? variants[`${metalKey}.${combo.designedShape}.white`] ?? null;
   const variant = exact ?? fallback;
   if (!variant) return null;
+  // The live 3D shows the same ring as the photos: this combo, metal, shape and colour.
   const query = new URLSearchParams({
-    studio: 'white', rotate: '1', head: String(combo.head), shank: String(combo.shank),
-    metal: metalKey, stone: STONE_FOR_COLOUR[variant.colour] ?? 'diamond', shape: exact ? wanted : combo.designedShape,
+    combo: combo.id, metal: metalKey, shape: exact ? wanted : combo.designedShape, colour: variant.colour, rotate: '1',
   });
   return {
     base: `${set.baseUrl}/media/${variant.dir}`,

@@ -6,7 +6,7 @@
  *   TEST_DATABASE_URL=… [TEST_REDIS_URL=…] pnpm test
  */
 import { createHmac, randomUUID } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -38,6 +38,9 @@ describe.skipIf(!url)('storefront API', () => {
   const platformCalls: { url: string; headers: Record<string, string>; body: any }[] = [];
   let draftSeq = 0;
   const bundlePath = join(mkdtempSync(join(tmpdir(), 'widget-')), 'jewelry-configurator.js');
+  // A render collection as apps/ring-lab writes it, with one rendered variant.
+  const rendersDir = mkdtempSync(join(tmpdir(), 'renders-'));
+  const spin = Buffer.from(Array.from({ length: 64 }, (_, i) => i));
 
   const get = (path: string, headers: Record<string, string> = { 'x-api-key': PK, origin: ORIGIN }) =>
     app.inject({ method: 'GET', url: path, headers });
@@ -172,6 +175,7 @@ describe.skipIf(!url)('storefront API', () => {
         centerCaratMin: '0.95',
         centerCaratMax: '1.20',
         cadId: 'CAD-2',
+        renderKey: 'sample/round-halo',
         variants: { create: { metal: 'PLATINUM_950', castingCost: '600.00' } }, // 1500
       },
       include: { variants: true },
@@ -193,6 +197,26 @@ describe.skipIf(!url)('storefront API', () => {
     });
 
     writeFileSync(bundlePath, 'console.log("widget");');
+    const variantDir = join(rendersDir, 'sample', 'media', 'round-halo', 'white-round-white');
+    mkdirSync(variantDir, { recursive: true });
+    writeFileSync(join(variantDir, 'spin.mp4'), spin);
+    writeFileSync(join(variantDir, 'threequarter-half.webp'), 'webp');
+    writeFileSync(join(rendersDir, 'sample', 'index.html'), '<title>3D</title><p>viewer</p>');
+    writeFileSync(join(rendersDir, 'sample', '.secret.json'), '{}');
+    writeFileSync(
+      join(rendersDir, 'sample', 'media', 'manifest.json'),
+      JSON.stringify({
+        version: 1, imageSize: 1000, halfSize: 500,
+        views: [{ id: 'front', label: 'Front' }, { id: 'threequarter', label: 'Angled' }],
+        metals: { white: { label: '18k white gold', swatch: '#eee' }, yellow: { label: '18k yellow gold', swatch: '#eb5' } },
+        colours: { white: { label: 'White', swatch: '#fff' } },
+        shapes: { round: { label: 'Round' } },
+        combos: [{
+          id: 'round-halo', head: 0, shank: 0, headLabel: 'Halo', shankLabel: 'Band', designedShape: 'round',
+          variants: { 'white.round.white': { metal: 'white', shape: 'round', colour: 'white', dir: 'round-halo/white-round-white', views: ['front', 'threequarter'], video: 'spin.mp4' } },
+        }],
+      }),
+    );
     const redisUrl = process.env.TEST_REDIS_URL;
     const cache = redisUrl ? new RedisCache(redisUrl) : new MemoryCache();
     app = await buildServer({
@@ -209,6 +233,7 @@ describe.skipIf(!url)('storefront API', () => {
         CHECKOUT_RATE_LIMIT_PER_MINUTE: '100000',
         SHOPIFY_APP_SECRET: 'app-level-secret',
         WIDGET_BUNDLE_PATH: bundlePath,
+        RENDERS_DIR: rendersDir,
       }),
       // Stand-in for the Shopify Admin API.
       fetch: (async (url: string, init: RequestInit) => {
@@ -392,6 +417,52 @@ describe.skipIf(!url)('storefront API', () => {
 
       const platinum = (await get('/api/v1/settings?metal=PLATINUM_950')).json().data[0];
       expect(platinum.variants).toHaveLength(1);
+    });
+
+    it('links rendered photos, video and 3D, and fills variants that have no photos of their own', async () => {
+      const [solitaire, halo] = (await get('/api/v1/settings')).json().data;
+      expect(solitaire.renders).toBeNull();
+      expect(halo.renders.combo).toBe('round-halo');
+      expect(halo.renders.baseUrl).toMatch(/^http:\/\/localhost(:\d+)?\/renders\/sample$/);
+      expect(halo.renders.viewerUrl).toBe(`${halo.renders.baseUrl}/index.html`);
+      // Platinum is not rendered separately; it looks like white metal, so the white renders are used.
+      const media = `${halo.renders.baseUrl}/media/round-halo/white-round-white`;
+      expect(halo.variants[0].imageUrls).toEqual([`${media}/threequarter-half.webp`, `${media}/front-half.webp`]);
+      expect(halo.variants[0].video360Url).toBe(`${media}/spin.mp4`);
+      expect(halo.thumbnailUrl).toBe(`${media}/threequarter-half.webp`);
+    });
+  });
+
+  describe('GET /renders/*', () => {
+    it('serves render files publicly, with byte ranges for video', async () => {
+      const manifest = await app.inject({ url: '/renders/sample/media/manifest.json' });
+      expect(manifest.statusCode).toBe(200);
+      expect(manifest.headers['content-type']).toMatch(/application\/json/);
+      expect(manifest.headers['cross-origin-resource-policy']).toBe('cross-origin');
+
+      const part = await app.inject({ url: '/renders/sample/media/round-halo/white-round-white/spin.mp4', headers: { range: 'bytes=2-5' } });
+      expect(part.statusCode).toBe(206);
+      expect(part.headers['content-range']).toBe(`bytes 2-5/${spin.length}`);
+      expect([...part.rawPayload]).toEqual([2, 3, 4, 5]);
+      const whole = await app.inject({ url: '/renders/sample/media/round-halo/white-round-white/spin.mp4' });
+      expect(whole.statusCode).toBe(200);
+      expect(whole.headers['content-type']).toBe('video/mp4');
+      expect(whole.rawPayload.equals(spin)).toBe(true);
+      const tail = await app.inject({ url: '/renders/sample/media/round-halo/white-round-white/spin.mp4', headers: { range: 'bytes=-4' } });
+      expect([...tail.rawPayload]).toEqual([60, 61, 62, 63]);
+      expect((await app.inject({ url: '/renders/sample/media/round-halo/white-round-white/spin.mp4', headers: { range: 'bytes=100-' } })).statusCode).toBe(416);
+    });
+
+    it('wraps the 3D viewer page in a document', async () => {
+      const page = await app.inject({ url: '/renders/sample/index.html' });
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toMatch(/^<!doctype html>.*<body><title>3D<\/title>/s);
+    });
+
+    it('serves nothing outside the folder, hidden or of unknown type', async () => {
+      for (const path of ['/renders/../package.json', '/renders/%2e%2e/%2e%2e/package.json', '/renders/sample/.secret.json', '/renders/sample/media', '/renders/sample/nope.webp']) {
+        expect((await app.inject({ url: path })).statusCode, path).toBe(404);
+      }
     });
   });
 

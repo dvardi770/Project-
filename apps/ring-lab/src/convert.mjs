@@ -8,7 +8,8 @@
  *   [{ "file": "rings/oval.3dm", "label": "3 oval ring", "head": "Three-stone oval", "shank": "Plain band" }]
  *
  * Output (in <out-dir>): rings.json (parts, stones, placements), rings.b64.txt (vertex data,
- * base64 because the artifact host serves no binary types) and index.html (the viewer).
+ * base64 because the artifact host serves no binary types), index.html (the 3D viewer) and
+ * gallery.html (the render studio page, which shows what renderMedia.mjs makes).
  *
  * Two things are worked out here once, so the viewer does not have to:
  * - Ambient occlusion for every metal vertex: how much of the surroundings nearby metal and
@@ -230,5 +231,5 @@ for (const entry of config) {
 mkdirSync(outDir, { recursive: true });
 writeFileSync(`${outDir}/rings.json`, JSON.stringify(out));
 writeFileSync(`${outDir}/rings.b64.txt`, Buffer.concat(chunks).toString('base64'));
-copyFileSync(fileURLToPath(new URL('../viewer/index.html', import.meta.url)), `${outDir}/index.html`);
+for (const page of ['index.html', 'gallery.html']) copyFileSync(fileURLToPath(new URL(`../viewer/${page}`, import.meta.url)), `${outDir}/${page}`);
 console.log(`wrote ${outDir} (${(offset / 1e6).toFixed(2)} MB of mesh data)`);

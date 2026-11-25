@@ -747,6 +747,60 @@ export const styles = css`
     border: 0;
     display: block;
   }
+  .hero.rendered {
+    background: #fff;
+  }
+  .hero.rendered img {
+    object-fit: contain;
+  }
+  .render-thumbs {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .render-thumb {
+    aspect-ratio: 1;
+    padding: 0;
+    border: 1px solid var(--_border);
+    border-radius: var(--_radius);
+    background: #fff;
+    cursor: pointer;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: #3d3a35;
+  }
+  .render-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .render-thumb {
+    position: relative;
+  }
+  .render-thumb .tag {
+    position: absolute;
+    left: 50%;
+    bottom: 4px;
+    transform: translateX(-50%);
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid #e6e3de;
+    font-size: 0.625rem;
+  }
+  .render-thumb[aria-pressed='true'] {
+    border-color: var(--_gold);
+    box-shadow: 0 0 0 1px var(--_gold);
+  }
+  .render-thumb:focus-visible {
+    outline: 2px solid var(--_gold);
+    outline-offset: 2px;
+  }
   .caption {
     margin: 8px 0 0;
     text-align: center;

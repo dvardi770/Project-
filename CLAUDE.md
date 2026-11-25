@@ -19,10 +19,19 @@ for the layout, purchase flow and store setup.
 - `packages/shared` — `storefront.ts` is the API response contract used by the widget; the API proves
   its DTOs match it in `apps/api/src/contract.ts`. `cache.ts` is the cache shared by API and worker.
 - `integrations/wordpress/jewelry-builder` — the WooCommerce plugin (PHP, WordPress coding style, tabs).
-- `apps/ring-lab` — prototype 3D configurator (plain ESM JavaScript, not typechecked): `.3dm` converter,
-  compact mesh format, head/shank fit check, three.js viewer with photo mode, catalogue renderer
-  (Playwright). Not wired into the API or widget. Never commit customer CAD files. The viewer is one HTML
+- `apps/ring-lab/configurator` — ring and band builders made from measurements (no CAD): `engine/cuts.mjs`
+  (facet-plane gem cuts; the stone shader traces the same planes), `ring.mjs` / `band.mjs` (geometry,
+  carats, grams), `pricing.mjs`, `stage.mjs` (three.js stage). Engine modules other than `stage.mjs` are
+  plain math with no three.js, tested in `test/configurator.test.ts`; `pnpm --filter @jewelry/ring-lab
+  test:e2e` drives both pages in Chromium.
+- `apps/ring-lab` — 3D configurator and render studio (plain ESM JavaScript, not typechecked): `.3dm`
+  converter, compact mesh format, head/shank fit check, three.js viewer (photo mode, embed mode,
+  `window.ringViewer` API), `renderMedia.mjs` (four angles + 360° MP4 per metal/shape/colour, needs
+  ffmpeg) and `gallery.html`. Never commit customer CAD files or rendered media. The viewer is one HTML
   file with its own copy of the mesh decoder in `src/meshData.mjs`; change both together.
+- Renders reach the ring builder through `VirtualSetting.renderKey` ("<collection>/<combo>"), the API's
+  `RENDERS_DIR` / `RENDERS_PUBLIC_URL` and `/renders/*`, and `Setting.renders` / `RenderManifest` in
+  `packages/shared/src/storefront.ts`.
 - `apps/dashboard` — Next.js (App Router) merchant admin: markup matrix, order fulfilment, billing
   (Shopify Billing API for Shopify stores, Stripe Subscriptions otherwise). Server code reads the
   database directly through `@jewelry/db`; client components must import `lib/markup-shared.ts`, never
@@ -40,6 +49,7 @@ pnpm dev:api
 php integrations/wordpress/tests/run.php     # plugin smoke test (stand-ins for WordPress, no WP needed)
 TEST_DATABASE_URL=... pnpm --filter @jewelry/dashboard test:e2e   # builds the dashboard, drives it in Chromium
 pnpm --filter @jewelry/widget test:e2e       # builds the widget and drives it in Chromium (needs Playwright's browser)
+pnpm --filter @jewelry/ring-lab test:e2e     # ring and band builders in Chromium
 ```
 
 New migrations: `prisma migrate dev` needs an interactive terminal; in a non-interactive session

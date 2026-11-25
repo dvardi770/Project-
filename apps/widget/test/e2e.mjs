@@ -28,7 +28,8 @@ const usd = (amount) => ({ amount: amount.toFixed(2), currency: 'USD' });
 const variant = (id, metal, price) => ({ id, metal, metalWeightGrams: 3.2, video360Url: null, imageUrls: [img(`${id}`)], price: usd(price) });
 const SETTINGS = [
   { id: 'set-1', sku: 'SOL-1', name: 'Classic Solitaire', description: null, style: 'SOLITAIRE', compatibleShapes: ['ROUND', 'OVAL'], centerCarat: { min: 0.5, max: 3 }, ringSize: { min: 4, max: 9 }, leadTimeDays: 14, video360Url: 'https://v360.ringbuilder.test/sol-1', thumbnailUrl: img('sol'), sideStones: [], variants: [variant('v-wg', 'WHITE_GOLD_14K', 1000), variant('v-pt', 'PLATINUM_950', 2000)], priceFrom: usd(1000) },
-  { id: 'set-2', sku: 'HALO-1', name: 'Round Halo', description: null, style: 'HALO', compatibleShapes: ['ROUND'], centerCarat: { min: 0.9, max: 1.2 }, ringSize: { min: null, max: null }, leadTimeDays: null, video360Url: null, thumbnailUrl: img('halo'), sideStones: [], variants: [variant('v-halo', 'PLATINUM_950', 1500)], priceFrom: usd(1500) },
+  { id: 'set-2', sku: 'HALO-1', name: 'Round Halo', description: null, style: 'HALO', compatibleShapes: ['ROUND'], centerCarat: { min: 0.9, max: 1.2 }, ringSize: { min: null, max: null }, leadTimeDays: null, video360Url: null, thumbnailUrl: img('halo'), sideStones: [], variants: [variant('v-halo', 'PLATINUM_950', 1500)], priceFrom: usd(1500),
+    renders: { baseUrl: 'https://renders.ringbuilder.test/sample', combo: 'round-halo', viewerUrl: 'https://renders.ringbuilder.test/sample/index.html' } },
   { id: 'set-3', sku: 'XSS', name: '<img src=x onerror="window.__xss=1">Vintage', description: null, style: 'VINTAGE', compatibleShapes: ['ROUND'], centerCarat: { min: 0.5, max: 2 }, ringSize: { min: 4, max: 9 }, leadTimeDays: null, video360Url: 'javascript:window.__xss=1', thumbnailUrl: 'javascript:window.__xss=1', sideStones: [], variants: [variant('v-vin', 'ROSE_GOLD_14K', 1200)], priceFrom: usd(1200) },
 ];
 const DIAMONDS = Array.from({ length: 30 }, (_, i) => ({
@@ -37,6 +38,19 @@ const DIAMONDS = Array.from({ length: 30 }, (_, i) => ({
   lab: 'GIA', certificateNumber: `21414${i}`, certificateUrl: `https://www.gia.edu/report-check?reportno=21414${i}`,
   measurements: { lengthMm: 6.4, widthMm: 6.4, depthMm: 3.9, lwRatio: 1 }, imageUrl: img(`dia-${i + 1}`), videoUrl: `https://v360.ringbuilder.test/dia-${i + 1}`, deliveryDays: 7, price: usd(1500 + i * 210.5),
 }));
+
+// A render collection's manifest (apps/ring-lab), with one rendered variant of the Round Halo.
+const RENDER_MANIFEST = {
+  version: 1, imageSize: 1000, halfSize: 500,
+  views: [{ id: 'threequarter', label: 'Angled' }, { id: 'front', label: 'Front' }, { id: 'side', label: 'Side' }, { id: 'top', label: 'Top' }],
+  metals: { white: { label: '18k white gold', swatch: '#eee' }, yellow: { label: '18k yellow gold', swatch: '#eb5' } },
+  colours: { white: { label: 'White', swatch: '#fff' } },
+  shapes: { round: { label: 'Round' } },
+  combos: [{
+    id: 'round-halo', head: 1, shank: 1, headLabel: 'Halo', shankLabel: 'Band', designedShape: 'round',
+    variants: { 'white.round.white': { metal: 'white', shape: 'round', colour: 'white', dir: 'round-halo/white-round-white', views: ['threequarter', 'front', 'side', 'top'], video: 'spin.mp4', poster: 'spin-poster.webp' } },
+  }],
+};
 
 // ── Host store ──
 const calls = { cartAdd: [], wcAjax: [], paid: 0 };
@@ -93,6 +107,14 @@ async function mockApi(page) {
     route.fulfill({ contentType: 'image/svg+xml', body: decodeURIComponent(svg(name, name.startsWith('dia') ? '#eef3f7' : '#f1ece2').split(',')[1]) });
   });
   await page.route(/v360\.ringbuilder\.test/, (route) => route.fulfill({ contentType: 'text/html', body: '<body style="margin:0;display:grid;place-items:center;height:100vh;font:20px sans-serif">360° viewer</body>' }));
+  await page.route(/renders\.ringbuilder\.test/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const cors = { 'access-control-allow-origin': '*' };
+    if (path.endsWith('/manifest.json')) return route.fulfill({ headers: cors, contentType: 'application/json', body: JSON.stringify(RENDER_MANIFEST) });
+    if (path.endsWith('.webp')) return route.fulfill({ contentType: 'image/svg+xml', body: decodeURIComponent(svg(path.split('/').pop(), '#ffffff').split(',')[1]) });
+    if (path.endsWith('.mp4')) return route.fulfill({ contentType: 'video/mp4', body: '' });
+    return route.fulfill({ contentType: 'text/html', body: '<body style="margin:0;display:grid;place-items:center;height:100vh;font:20px sans-serif">Live 3D</body>' });
+  });
   // The same API, reached directly or through a store's own proxy path.
   const handler = async (route) => {
     const req = route.request();
@@ -359,6 +381,31 @@ await scenario('a diamond that sold meanwhile is reported and removed', {}, asyn
   await w(page).getByRole('heading', { name: 'Choose your diamond' }).waitFor();
   assert.equal(await w(page).getByRole('button', { name: /^Select 0\.75 ct Round/ }).count(), 0);
   assert.ok(await w(page).getByRole('button', { name: 'Review ring', exact: true }).isDisabled());
+});
+
+await scenario('review shows rendered photos from four angles, a 360° video and live 3D', {}, async (page) => {
+  await w(page).getByRole('button', { name: /Round Halo/ }).click();
+  await w(page).getByRole('button', { name: 'Choose a diamond', exact: true }).click();
+  await w(page).getByRole('button', { name: /^Select 0\.95 ct Round/ }).click(); // the halo takes 0.9–1.2 ct
+  await w(page).getByRole('button', { name: 'Review ring', exact: true }).click();
+  await w(page).getByRole('heading', { name: 'Review your ring' }).waitFor();
+  const hero = w(page).locator('.hero.rendered');
+  // Platinum is shown with the white-metal renders; the angled view comes first.
+  const base = 'https://renders.ringbuilder.test/sample/media/round-halo/white-round-white';
+  await hero.locator(`img[src="${base}/threequarter.webp"]`).waitFor();
+  assert.match(await hero.locator('img').getAttribute('srcset'), /threequarter-half\.webp 500w/);
+  assert.equal(await w(page).locator('.render-thumb').count(), 6); // four views, 360°, 3D
+  await w(page).getByRole('button', { name: 'Front view' }).click();
+  await hero.locator(`img[src="${base}/front.webp"]`).waitFor();
+  await w(page).getByRole('button', { name: '360° video' }).click();
+  assert.equal(await hero.locator('video').getAttribute('src'), `${base}/spin.mp4`);
+  assert.equal(await hero.locator('video').getAttribute('poster'), `${base}/spin-poster.webp`);
+  await w(page).getByRole('button', { name: 'Live 3D' }).click();
+  const src = await hero.locator('iframe').getAttribute('src');
+  assert.match(src, /^https:\/\/renders\.ringbuilder\.test\/sample\/index\.html\?embed&/);
+  assert.match(src, /head=1&shank=1&metal=white&stone=diamond&shape=round/);
+  await w(page).getByText('Rendered from the design files.').waitFor();
+  await shot(page, '3-review-rendered');
 });
 
 await scenario('phone-width layout has no horizontal overflow', { viewport: { width: 390, height: 844 } }, async (page) => {

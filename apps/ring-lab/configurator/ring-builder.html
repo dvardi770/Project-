@@ -1,0 +1,405 @@
+<title>Ring Builder</title>
+<meta name="description" content="Design an engagement ring in live 3D: stone shape, carat, gem, head, band and metals.">
+<style>
+  :root {
+    --bg: #ffffff; --ink: #1d1c1a; --muted: #6f6a64; --faint: #a39d96; --line: #e9e5df; --chip: #f6f4f1;
+    --accent: #8a6a3f; --accent-soft: #f3ede4; --stage: #ffffff; --icon-bg: #ffffff; --focus: #1d1c1a;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151514; --ink: #f1eee9; --muted: #b3ada5; --faint: #8a847c; --line: #2c2a27; --chip: #201f1d;
+      --accent: #d4b07a; --accent-soft: #2a241b; --stage: #1b1b1a; --icon-bg: #151514; --focus: #f1eee9; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151514; --ink: #f1eee9; --muted: #b3ada5; --faint: #8a847c; --line: #2c2a27; --chip: #201f1d;
+    --accent: #d4b07a; --accent-soft: #2a241b; --stage: #1b1b1a; --icon-bg: #151514; --focus: #f1eee9; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  /* On phones the strip under the status bar keeps the page's colour while content scrolls under it. */
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+  body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  button, select { font: inherit; color: inherit; }
+  .app > * { min-width: 0; }
+  .app { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; }
+  .bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: .01em; }
+  .brand small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; letter-spacing: .04em; }
+  .icon-btn { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .icon-btn:hover { border-color: var(--faint); }
+  .stage-wrap { position: sticky; top: calc(57px + env(safe-area-inset-top, 0px)); z-index: 4; background: var(--stage); height: min(50vh, 460px); border-bottom: 1px solid var(--line); }
+  #stage { position: absolute; inset: 0; }
+  .tools { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .tool { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent); display: grid; place-items: center; cursor: pointer; }
+  .tool[aria-pressed="true"] { border-color: var(--ink); }
+  .views { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; }
+  .views button { border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent); border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; }
+  .hint { position: absolute; right: 14px; bottom: 14px; margin: 0; font-size: 12px; color: var(--faint); pointer-events: none; }
+  @media (max-width: 560px) { .hint { display: none; } }
+  .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; background: var(--stage); transition: opacity .4s; }
+  .loading[hidden] { display: grid; opacity: 0; pointer-events: none; }
+  .panel { padding: 18px 16px 24px; }
+  h1 { font: 400 26px/1.2 Georgia, "Times New Roman", serif; margin: 4px 0 2px; letter-spacing: -.01em; }
+  .sub { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+  .section { border-top: 1px solid var(--line); padding: 14px 0 6px; }
+  .section h2 { margin: 0 0 10px; font-size: 14px; font-weight: 400; color: var(--muted); }
+  .section h2 b { color: var(--ink); font-weight: 600; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px 6px; }
+  .choice { border: 0; background: none; padding: 6px 2px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; border-radius: 10px; color: var(--ink); }
+  .choice .art { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 12px; border: 1px solid transparent; color: var(--muted); }
+  .choice .art img { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; }
+  .choice span { font-size: 11.5px; line-height: 1.2; text-align: center; color: var(--muted); max-width: 72px; }
+  .choice:hover .art { background: var(--chip); }
+  .choice[aria-checked="true"] .art { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+  .choice[aria-checked="true"] span { color: var(--ink); font-weight: 600; }
+  .choice:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .swatches .art { width: 40px; height: 40px; border-radius: 50%; }
+  .dot { width: 30px; height: 30px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chips .choice { flex-direction: row; padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; }
+  .chips .choice span { font-size: 13px; max-width: none; }
+  .chips .choice[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  select { width: 100%; max-width: 280px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 10px; }
+  .note { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+  .buy { position: sticky; bottom: 0; z-index: 6; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+  .buy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .price strong { font: 400 24px/1.1 Georgia, "Times New Roman", serif; display: block; }
+  .price .spec { color: var(--muted); font-size: 12.5px; }
+  .link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; font-size: 12.5px; cursor: pointer; }
+  .primary { border: 0; background: var(--ink); color: var(--bg); height: 46px; padding: 0 22px; border-radius: 6px; letter-spacing: .08em; font-size: 13px; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+  .primary:hover { opacity: .9; }
+  .breakdown { margin: 10px 0 2px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .breakdown div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; }
+  .breakdown div span:first-child { color: var(--muted); }
+  .breakdown .estimate { color: var(--faint); font-size: 12px; margin-top: 4px; display: block; }
+  .toast { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 9; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .stats { position: absolute; left: 12px; top: 12px; font: 11px/1.3 ui-monospace, monospace; background: rgba(0,0,0,.62); color: #fff; padding: 4px 7px; border-radius: 4px; pointer-events: none; }
+  .embed .bar { display: none; }
+  .embed .stage-wrap { top: 0; }
+  @media (min-width: 960px) {
+    .app { grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: auto 1fr auto; }
+    .bar { grid-column: 1 / -1; }
+    .stage-wrap { grid-row: 2 / 4; grid-column: 1; height: calc(100vh - 57px); border-bottom: 0; border-right: 1px solid var(--line); }
+    .embed .stage-wrap { height: 100vh; }
+    .panel { grid-column: 2; grid-row: 2; padding: 22px 24px; }
+    .buy { grid-column: 2; grid-row: 3; padding: 12px 24px 16px; }
+    h1 { font-size: 30px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .loading, .toast { transition: none; } }
+</style>
+
+<div class="app" id="app">
+  <header class="bar">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 15L14 8H26L32 15L20 33Z"/><path d="M8 15H32M14 8L17 15L20 8L23 15L26 8M17 15L20 33L23 15"/></svg>
+      <div>Ring Builder<small>Made to your design</small></div>
+    </div>
+    <button class="icon-btn" id="share" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M12 3v13M7 8l5-5 5 5"/></svg>
+      Share
+    </button>
+  </header>
+
+  <section class="stage-wrap" aria-label="Your ring in 3D">
+    <div id="stage"></div>
+    <div class="tools">
+      <button class="tool" id="rotate" type="button" aria-pressed="true" title="Turn automatically" aria-label="Turn automatically">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg>
+      </button>
+      <button class="tool" id="reset" type="button" title="Reset view" aria-label="Reset view">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      </button>
+    </div>
+    <div class="views" role="group" aria-label="Views">
+      <button type="button" data-view="head">Head</button>
+      <button type="button" data-view="top">Top</button>
+      <button type="button" data-view="side">Side</button>
+      <button type="button" data-view="front">Front</button>
+    </div>
+    <p class="hint">Drag to turn · pinch to zoom</p>
+    <div class="loading" id="loading">Preparing your ring…</div>
+  </section>
+
+  <main class="panel">
+    <h1>Design your ring</h1>
+    <p class="sub">Every part is made to your choices and measurements.</p>
+    <div id="options"></div>
+  </main>
+
+  <footer class="buy">
+    <div class="buy-row">
+      <div class="price">
+        <strong id="price">—</strong>
+        <div class="spec" id="spec"></div>
+        <button class="link" id="toggle-breakdown" type="button" aria-expanded="false" aria-controls="breakdown">Price breakdown</button>
+      </div>
+      <button class="primary" id="add" type="button">Add to cart</button>
+    </div>
+    <div class="breakdown" id="breakdown" hidden></div>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import { Stage } from './engine/stage.mjs';
+import { buildRing, HEADS, SHANKS, CARATS, RING_SIZES, DEFAULT_RING } from './engine/ring.mjs';
+import { SHAPES } from './engine/cuts.mjs';
+import { GEMS, METALS, metalLabel, usToDiameter } from './engine/materials.mjs';
+import { priceRing, money } from './engine/pricing.mjs';
+import { shapeIcon, caratIcon, HEAD_ICONS, SHANK_ICONS, gemSwatch } from './engine/icons.mjs';
+
+const params = new URLSearchParams(location.search);
+if (params.has('embed')) document.documentElement.classList.add('embed');
+
+// Choices: defaults, then the link's (#shape=oval&carat=1.5…), then ?query for embedding.
+const state = { ...DEFAULT_RING };
+const NUMERIC = new Set(['carat', 'size']);
+function readLink(source) {
+  for (const [k, v] of source) if (k in DEFAULT_RING) state[k] = NUMERIC.has(k) ? Number(v) : v;
+}
+readLink(new URLSearchParams(location.hash.slice(1)));
+readLink(params);
+
+const sections = [
+  { key: 'shape', title: 'Shape', view: 'head', options: () => Object.entries(SHAPES).map(([value, s]) => ({ value, label: s.label, icon: shapeIcon(value) })) },
+  { key: 'carat', title: 'Carat', view: 'head', options: () => CARATS.map((c) => ({ value: c, label: `${c.toFixed(2)} ct`, icon: caratIcon(state.shape, c) })), shown: (v) => `${v.toFixed(2)} ct` },
+  { key: 'gem', title: 'Centre stone', view: 'top', kind: 'swatch', options: () => Object.entries(GEMS).map(([value, g]) => ({ value, label: g.label, swatch: gemSwatch(g.swatch) })) },
+  { key: 'head', title: 'Head', view: 'head', options: () => Object.entries(HEADS).map(([value, h]) => ({ value, label: h.label, icon: HEAD_ICONS[value] })) },
+  { key: 'shank', title: 'Shank', view: 'shank', options: () => Object.entries(SHANKS).map(([value, s]) => ({ value, label: s.label, icon: SHANK_ICONS[value] })) },
+  { key: 'shankMetal', title: 'Shank metal', view: 'overview', kind: 'swatch', options: () => Object.entries(METALS).map(([value, m]) => ({ value, label: m.label, swatch: m.swatch })) },
+  { key: 'headMetal', title: 'Head metal', view: 'head', kind: 'swatch', options: () => Object.entries(METALS).map(([value, m]) => ({ value, label: m.label, swatch: m.swatch })) },
+  { key: 'karat', title: 'Gold', kind: 'chips', options: () => [{ value: '14k', label: '14k gold' }, { value: '18k', label: '18k gold' }], shown: (v) => `${v} gold`, note: 'Platinum is 950 platinum.' },
+  { key: 'accentGem', title: 'Accent stones', view: 'head', kind: 'swatch', options: () => ['diamond', 'lab', 'sapphire', 'ruby', 'emerald', 'pinkdiamond', 'yellowsapphire', 'tanzanite'].map((value) => ({ value, label: GEMS[value].label, swatch: gemSwatch(GEMS[value].swatch) })), hidden: () => !design || design.specs.accents.count === 0 },
+  { key: 'size', title: 'Ring size', kind: 'select', options: () => RING_SIZES.map((s) => ({ value: s, label: `US ${s} · ${usToDiameter(s).toFixed(1)} mm` })), shown: (v) => `US ${v}` },
+];
+
+const optionsEl = document.getElementById('options');
+function renderOptions() {
+  optionsEl.replaceChildren();
+  for (const sec of sections) {
+    if (sec.hidden?.()) continue;
+    const el = document.createElement('section');
+    el.className = 'section';
+    const current = sec.options().find((o) => o.value === state[sec.key]);
+    const h = document.createElement('h2');
+    h.id = `h-${sec.key}`;
+    h.innerHTML = `${sec.title}: <b></b>`;
+    h.querySelector('b').textContent = current?.label ?? (sec.shown ? sec.shown(state[sec.key]) : state[sec.key]);
+    el.append(h);
+    if (sec.kind === 'select') {
+      const sel = document.createElement('select');
+      sel.setAttribute('aria-labelledby', h.id);
+      for (const o of sec.options()) sel.append(new Option(o.label, o.value, false, o.value === state[sec.key]));
+      sel.addEventListener('change', () => choose(sec, Number(sel.value)));
+      el.append(sel);
+    } else {
+      const list = document.createElement('div');
+      list.className = `choices ${sec.kind === 'swatch' ? 'swatches' : ''} ${sec.kind === 'chips' ? 'chips' : ''}`;
+      list.setAttribute('role', 'radiogroup');
+      list.setAttribute('aria-labelledby', h.id);
+      for (const o of sec.options()) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'choice';
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(o.value === state[sec.key]));
+        b.tabIndex = o.value === state[sec.key] ? 0 : -1;
+        b.dataset.value = String(o.value);
+        if (sec.kind !== 'chips') {
+          const art = document.createElement('div');
+          art.className = 'art';
+          if (o.swatch) art.innerHTML = `<div class="dot" style="background:${o.swatch}"></div>`;
+          else art.innerHTML = o.icon;
+          const thumb = thumbs.get(`${sec.key}:${o.value}`);
+          if (thumb) art.innerHTML = `<img alt="" src="${thumb}">`;
+          b.append(art);
+        }
+        const label = document.createElement('span');
+        label.textContent = o.label;
+        b.append(label);
+        b.addEventListener('click', () => choose(sec, o.value));
+        b.addEventListener('keydown', (e) => {
+          const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+          if (!(e.key in keys)) return;
+          e.preventDefault();
+          const all = [...list.children];
+          const next = all[(all.indexOf(b) + keys[e.key] + all.length) % all.length];
+          next.focus();
+          next.click();
+        });
+        list.append(b);
+      }
+      el.append(list);
+    }
+    if (sec.note) { const n = document.createElement('p'); n.className = 'note'; n.textContent = sec.note; el.append(n); }
+    optionsEl.append(el);
+  }
+}
+
+function choose(sec, value) {
+  if (state[sec.key] === value) { if (sec.view) stage?.focus(sec.view); return; }
+  const focusKey = document.activeElement?.closest?.('.choice') ? `${sec.key}:${value}` : null;
+  state[sec.key] = value;
+  // A new shank metal brings the head with it unless the shopper chose a different head metal.
+  if (sec.key === 'shankMetal' && !headMetalChosen) state.headMetal = value;
+  if (sec.key === 'headMetal') headMetalChosen = true;
+  update();
+  if (sec.view) stage.focus(sec.view);
+  if (focusKey) {
+    const [key, v] = [sec.key, String(value)];
+    optionsEl.querySelector(`[aria-labelledby="h-${key}"] [data-value="${CSS.escape(v)}"]`)?.focus({ preventScroll: true });
+  }
+}
+let headMetalChosen = new URLSearchParams(location.hash.slice(1)).has('headMetal') && state.headMetal !== state.shankMetal;
+
+let design = null, price = null;
+function update() {
+  design = buildRing(state);
+  stage.setDesign({
+    groups: [{
+      parts: [
+        { geometry: design.metal.shank, metal: state.shankMetal, finish: 'polished' },
+        { geometry: design.metal.head, metal: state.headMetal, finish: 'polished' },
+      ],
+      stones: design.stones,
+    }],
+    frame: design.frame,
+  });
+  price = priceRing({ ...design.specs, karat: state.karat });
+  renderOptions();
+  renderPrice();
+  history.replaceState(null, '', `${location.pathname}${location.search}#${new URLSearchParams(Object.entries(state).map(([k, v]) => [k, String(v)]))}`);
+  scheduleThumbs();
+}
+
+function renderPrice() {
+  const s = design.specs;
+  document.getElementById('price').textContent = money(price.total, price.currency);
+  const metals = s.metal.head.label === s.metal.shank.label ? s.metal.shank.label : `${s.metal.shank.label} & ${s.metal.head.label.replace(/^\d+k /, '')}`;
+  document.getElementById('spec').textContent = `${s.totalCarats.toFixed(2)} ct total · ${s.metal.grams.toFixed(1)} g ${metals} · ${s.centre.mm[0].toFixed(1)}×${s.centre.mm[1].toFixed(1)} mm`;
+  const bd = document.getElementById('breakdown');
+  bd.replaceChildren(...price.lines.map((l) => {
+    const row = document.createElement('div');
+    const a = document.createElement('span'); a.textContent = l.label;
+    const b = document.createElement('span'); b.textContent = money(l.amount, price.currency);
+    row.append(a, b);
+    return row;
+  }));
+  const est = document.createElement('span');
+  est.className = 'estimate';
+  est.textContent = 'Metal weight and stone carats are worked out from your design.';
+  bd.append(est);
+}
+
+const toggle = document.getElementById('toggle-breakdown');
+toggle.addEventListener('click', () => {
+  const bd = document.getElementById('breakdown');
+  bd.hidden = !bd.hidden;
+  toggle.setAttribute('aria-expanded', String(!bd.hidden));
+  toggle.textContent = bd.hidden ? 'Price breakdown' : 'Hide breakdown';
+});
+
+const toastEl = document.getElementById('toast');
+function toast(text) {
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+document.getElementById('add').addEventListener('click', () => {
+  const detail = { type: 'ring-builder:add-to-cart', design: { ...state }, specs: design.specs, price };
+  window.dispatchEvent(new CustomEvent('ring-builder:add-to-cart', { detail }));
+  // The store page that embeds the builder adds it to its cart.
+  if (window.parent !== window) window.parent.postMessage(detail, '*');
+  toast('Added to your cart');
+});
+
+document.getElementById('share').addEventListener('click', async () => {
+  const url = location.href;
+  try {
+    if (navigator.share) await navigator.share({ title: 'My ring design', url });
+    else { await navigator.clipboard.writeText(url); toast('Link copied'); }
+  } catch { /* the shopper closed the share sheet */ }
+});
+
+const rotateBtn = document.getElementById('rotate');
+rotateBtn.addEventListener('click', () => {
+  const on = rotateBtn.getAttribute('aria-pressed') !== 'true';
+  rotateBtn.setAttribute('aria-pressed', String(on));
+  stage.setAutoRotate(on);
+});
+document.getElementById('reset').addEventListener('click', () => stage.focus('overview'));
+for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => stage.focus(b.dataset.view));
+
+// ─── Live thumbnails for heads and shanks (rendered by the same engine, after the first frame) ──
+const thumbs = new Map();
+let thumbTimer = null;
+function scheduleThumbs() {
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(makeThumbs, 900);
+}
+async function makeThumbs() {
+  if (!stage.thumbnail) return;
+  const key = `${state.shape}|${state.carat}|${state.gem}|${state.headMetal}|${state.shankMetal}|${state.accentGem}`;
+  if (makeThumbs.key === key) return;
+  makeThumbs.key = key;
+  const jobs = [
+    ...Object.keys(HEADS).map((h) => ({ id: `head:${h}`, o: { ...state, head: h, shank: 'classic' }, view: 'head' })),
+    ...Object.keys(SHANKS).map((s) => ({ id: `shank:${s}`, o: { ...state, shank: s }, view: 'shank' })),
+  ];
+  for (const job of jobs) {
+    if (makeThumbs.key !== key) return;
+    await new Promise((r) => (window.requestIdleCallback ?? setTimeout)(r));
+    const d = buildRing(job.o);
+    const url = await stage.thumbnail({
+      groups: [{ parts: [{ geometry: d.metal.shank, metal: job.o.shankMetal }, { geometry: d.metal.head, metal: job.o.headMetal }], stones: d.stones }],
+      frame: d.frame,
+    }, job.view, 96);
+    thumbs.set(job.id, url);
+    const [secKey, value] = job.id.split(':');
+    const art = optionsEl.querySelector(`[aria-labelledby="h-${secKey}"] [data-value="${CSS.escape(value)}"] .art`);
+    if (art) art.innerHTML = `<img alt="" src="${url}">`;
+  }
+}
+
+// ─── Start ──
+let stage;
+try {
+  stage = new Stage(document.getElementById('stage'), { background: getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#ffffff' });
+} catch (e) {
+  document.getElementById('loading').textContent = 'This browser cannot show 3D. Try a recent Chrome, Safari or Firefox.';
+  throw e;
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => stage.setBackground(getComputedStyle(document.documentElement).getPropertyValue('--stage').trim()));
+update();
+requestAnimationFrame(() => requestAnimationFrame(() => { document.getElementById('loading').hidden = true; }));
+// Compile the other stones' shaders in the background, so the first change does not pause.
+setTimeout(() => stage.warm([...Object.keys(SHAPES), 'round-accent', 'princess-accent'], [state.gem, state.accentGem]), 1500);
+
+if (params.has('stats')) {
+  const box = document.createElement('div');
+  box.className = 'stats';
+  document.querySelector('.stage-wrap').append(box);
+  setInterval(() => {
+    const s = stage.stats;
+    box.textContent = `${s.fps} fps · ${s.ms.toFixed(1)} ms · ${s.ratio}× · ${Math.round(s.triangles / 1000)}k tris · still ${s.samples}`;
+  }, 500);
+}
+
+window.ringBuilder = {
+  stage, state,
+  get design() { return design; },
+  get price() { return price; },
+  set(o) { Object.assign(state, o); update(); },
+};
+</script>

@@ -1,0 +1,380 @@
+<title>Ring Render Studio</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: product media (square, always on white) beside the product's choices; stacked on phones. */
+:root {
+  --bg: #fbfaf8;
+  --panel: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6a68;
+  --line: #e6e3de;
+  --accent: #7a5c2e;
+  --accent-soft: #f3ece1;
+  --media: #ffffff;
+  --focus: #7a5c2e;
+  --display: 'Cormorant Garamond', 'Palatino Linotype', Palatino, Georgia, serif;
+  --text: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #161617; --panel: #1f1f21; --ink: #ededeb; --muted: #a6a5a2; --line: #333336;
+  --accent: #d6b47e; --accent-soft: #3a3125; --focus: #d6b47e; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #161617; --panel: #1f1f21; --ink: #ededeb; --muted: #a6a5a2; --line: #333336;
+  --accent: #d6b47e; --accent-soft: #3a3125; --focus: #d6b47e; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--text); }
+.wrap { max-width: 1200px; margin: 0 auto; padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.product { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+
+/* Media */
+.media { display: grid; gap: 12px; min-width: 0; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+.stage { position: relative; aspect-ratio: 1 / 1; max-width: 100%; background: var(--media); border-radius: 6px; overflow: hidden; }
+.stage img, .stage video, .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; object-fit: contain; background: var(--media); }
+.stage img { transition: opacity .22s ease; }
+.stage img.fading { opacity: 0; }
+.stage .zoom { position: absolute; inset: 0; background-repeat: no-repeat; background-color: var(--media); background-size: 220%; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.stage.zooming .zoom { opacity: 1; }
+.badge { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #55524d; background: rgba(255,255,255,.92); border: 1px solid #e6e3de; border-radius: 999px; padding: 5px 10px; }
+.note { position: absolute; left: 12px; right: 12px; top: 12px; font-size: 12.5px; color: #4b4842; background: rgba(255,255,255,.95); border: 1px solid #e6e3de; border-radius: 8px; padding: 8px 10px; }
+.thumbs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.thumb { position: relative; aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 6px; background: var(--media); padding: 0; cursor: pointer; overflow: hidden; display: grid; place-items: center; }
+.thumb img { width: 100%; height: 100%; object-fit: contain; }
+.thumb span { font: 600 12px/1.1 var(--text); color: #3d3a35; text-align: center; padding: 4px; }
+.thumb .tag { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); background: rgba(255,255,255,.94); border: 1px solid #e6e3de; border-radius: 999px; padding: 2px 7px; font-size: 11px; }
+.thumb[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.thumb:disabled { cursor: default; opacity: .45; }
+.thumb:focus-visible, .opt:focus-visible, .seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Choices */
+.info { display: grid; gap: 22px; min-width: 0; }
+.eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+h1 { font: 600 2.4rem/1.08 var(--display); margin: 4px 0 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 52ch; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { font: 500 13.5px/1 var(--text); padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.seg button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 10px; min-width: 0; }
+legend { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 0; margin-bottom: 10px; }
+legend b { color: var(--ink); text-transform: none; letter-spacing: 0; font-weight: 500; margin-left: 6px; font-size: 13.5px; }
+.opts { display: flex; flex-wrap: wrap; gap: 10px; }
+.opt { display: grid; justify-items: center; gap: 6px; background: none; border: 0; padding: 0; cursor: pointer; color: var(--ink); font: 12.5px/1.2 var(--text); min-width: 64px; }
+.swatch { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); box-shadow: inset 0 0 0 3px var(--panel); }
+.opt[aria-pressed="true"] .swatch, .opt[aria-pressed="true"] .shape { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shape { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); display: grid; place-items: center; background: var(--panel); }
+.shape svg { width: 28px; height: 28px; }
+.opt small { color: var(--muted); font-size: 11px; }
+.facts { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 18px; }
+.facts li { display: flex; gap: 10px; color: var(--muted); font-size: 14px; }
+.facts b { color: var(--ink); font-weight: 600; min-width: 7.5em; }
+
+.about { margin-top: 44px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+.card h2 { font: 600 1.35rem/1.2 var(--display); margin: 0 0 8px; }
+.card p, .card li { color: var(--muted); font-size: 14px; }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.card b { color: var(--ink); font-weight: 600; }
+.status { position: absolute; inset: 0; display: grid; place-items: center; color: #6b6a68; font-size: 14px; }
+
+@media (max-width: 860px) {
+  .product { grid-template-columns: 1fr; gap: 24px; }
+  .media { position: static; }
+  h1 { font-size: 2rem; }
+  .thumbs { grid-template-columns: repeat(6, minmax(44px, 1fr)); overflow-x: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .stage img, .stage .zoom { transition: none; } }
+</style>
+
+<div class="wrap">
+  <div class="product">
+    <section class="media" aria-label="Photos and video">
+      <div class="stage" id="stage">
+        <div class="status" id="status">Loading…</div>
+        <div class="zoom" id="zoom" aria-hidden="true"></div>
+        <span class="badge" id="badge" hidden></span>
+        <p class="note" id="note" hidden></p>
+      </div>
+      <div class="thumbs" id="thumbs" role="group" aria-label="Choose a view"></div>
+    </section>
+
+    <section class="info" aria-label="Your ring">
+      <div>
+        <span class="eyebrow">Render studio · sample from your CAD files</span>
+        <h1 id="title">Your ring</h1>
+      </div>
+      <p class="lede">Photos from four angles and a 360° video, rendered from the CAD files for every metal, centre stone shape and diamond colour. Change any choice and the photos and video change with it.</p>
+      <fieldset>
+        <legend>Setting</legend>
+        <div class="seg" id="combos"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Metal <b id="metalName"></b></legend>
+        <div class="opts" id="metals"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Centre stone shape <b id="shapeName"></b></legend>
+        <div class="opts" id="shapes"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Diamond colour <b id="colourName"></b></legend>
+        <div class="opts" id="colours"></div>
+      </fieldset>
+      <ul class="facts">
+        <li><b>Views</b><span>Angled, front, side and top, plus a 360° turn and live 3D</span></li>
+        <li><b>Made from</b><span id="madeFrom"></span></li>
+        <li><b>Download size</b><span id="weight">Photos are small ready-made files; the video loads only when you open it</span></li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="about" aria-label="About the render studio">
+    <div class="card">
+      <h2>How the photos are made</h2>
+      <ul>
+        <li><b>Rendered from the CAD files</b> on a server, the way iJewel's batch renderer works: every metal, shape and colour, from every angle.</li>
+        <li><b>Diamonds</b> are traced through their real facets, reflecting inside them as real stones do, with fire; <b>metal</b> is lit like a jeweller's light tent and uses the CAD's exact surface curves.</li>
+        <li><b>The 360°</b> shows the ring lying down, turning under fixed lights like a turntable shoot, with a touch of macro-lens depth of field.</li>
+        <li><b>Shapes</b> other than the head's own are fitted to its seat, to show the stone; a production head per shape would place prongs to match.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Why it loads fast</h2>
+      <ul>
+        <li><b>Photos are ready-made files</b> (WebP, two sizes): a phone downloads the half-size one.</li>
+        <li><b>The 360° video</b> (H.264 MP4, starts streaming at once) loads only when opened.</li>
+        <li><b>3D</b> loads only on request. Choices without photos yet are shown in 3D until they are rendered.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+const stage = document.getElementById('stage');
+const statusEl = document.getElementById('status');
+const thumbsEl = document.getElementById('thumbs');
+const noteEl = document.getElementById('note');
+const badgeEl = document.getElementById('badge');
+const zoomEl = document.getElementById('zoom');
+
+let manifest;
+try {
+  manifest = await fetch('media/manifest.json').then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+} catch {
+  statusEl.textContent = 'No rendered media yet. Run renderMedia.mjs to make some.';
+  throw new Error('no media');
+}
+
+// Outlines for the shape buttons.
+const SHAPE_SVG = {
+  round: '<circle cx="16" cy="16" r="12"/><circle cx="16" cy="16" r="6"/>',
+  oval: '<ellipse cx="16" cy="16" rx="9" ry="13"/><ellipse cx="16" cy="16" rx="4.5" ry="6.5"/>',
+  cushion: '<rect x="4" y="4" width="24" height="24" rx="8"/><rect x="10" y="10" width="12" height="12" rx="4"/>',
+  emerald: '<path d="M10 3h12l5 5v16l-5 5H10l-5-5V8z"/><rect x="11" y="9" width="10" height="14"/>',
+  princess: '<rect x="5" y="5" width="22" height="22"/><path d="M5 5l22 22M27 5L5 27"/>',
+  pear: '<path d="M16 3c6 7 10 12 10 17a10 9 0 0 1-20 0c0-5 4-10 10-17z"/>',
+  marquise: '<path d="M16 2c8 8 8 20 0 28c-8-8-8-20 0-28z"/>',
+};
+const shapeIcon = (s) => `<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">${SHAPE_SVG[s] ?? SHAPE_SVG.round}</svg>`;
+
+const combos = manifest.combos;
+const params = new URLSearchParams(location.search);
+const state = { combo: 0, metal: Object.keys(manifest.metals)[0], shape: null, colour: Object.keys(manifest.colours)[0], view: 'threequarter' };
+state.shape = combos[0].designedShape;
+
+const shapesOf = (c) => [...new Set([c.designedShape, ...Object.values(c.variants).map((v) => v.shape)])];
+const variantOf = () => combos[state.combo].variants[`${state.metal}.${state.shape}.${state.colour}`] ?? null;
+const url = (v, file) => `media/${v.dir}/${file}`;
+const STONE_FOR_COLOUR = { white: 'diamond', yellow: 'yellow', pink: 'pinkdiamond', blue: 'bluediamond' };
+
+// ─── Options ───────────────────────────────────────────────────────────────
+function optButton(container, { label, sub, pressed, onPick, swatch, icon, preload }) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'opt';
+  b.setAttribute('aria-pressed', String(pressed));
+  b.innerHTML = swatch ? '<span class="swatch"></span>' : `<span class="shape">${icon}</span>`;
+  if (swatch) b.firstChild.style.background = swatch;
+  const text = document.createElement('span');
+  text.textContent = label;
+  b.append(text);
+  if (sub) { const s = document.createElement('small'); s.textContent = sub; b.append(s); }
+  b.addEventListener('click', onPick);
+  // Fetch the photo this choice would show as soon as the pointer or focus arrives.
+  if (preload) { b.addEventListener('pointerenter', preload, { once: true }); b.addEventListener('focus', preload, { once: true }); }
+  container.append(b);
+}
+function preloadFor(change) {
+  return () => {
+    const next = { ...state, ...change };
+    const v = combos[next.combo].variants[`${next.metal}.${next.shape}.${next.colour}`];
+    if (v) warm(url(v, `${state.view === '360' || state.view === '3d' ? 'threequarter' : state.view}.webp`));
+  };
+}
+const warmed = new Set();
+function warm(src) {
+  if (warmed.has(src)) return;
+  warmed.add(src);
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = src;
+}
+
+function renderOptions() {
+  const c = combos[state.combo];
+  document.getElementById('title').textContent = `${c.headLabel} on ${c.shankLabel.toLowerCase()}`;
+  document.getElementById('madeFrom').textContent = `Head and band from your CAD files, joined as the fit check allows`;
+  const combosEl = document.getElementById('combos');
+  combosEl.replaceChildren(...combos.map((x, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = x.headLabel;
+    b.setAttribute('aria-pressed', String(i === state.combo));
+    b.addEventListener('click', () => { state.combo = i; state.shape = x.designedShape; update(); });
+    return b;
+  }));
+
+  const metalsEl = document.getElementById('metals');
+  metalsEl.replaceChildren();
+  for (const [key, m] of Object.entries(manifest.metals)) {
+    const plain = m.label.replace(/^\d+k /i, '');
+    optButton(metalsEl, { label: plain.charAt(0).toUpperCase() + plain.slice(1), sub: m.label.match(/^\d+k/i)?.[0] ?? '', swatch: m.swatch, pressed: key === state.metal,
+      onPick: () => { state.metal = key; update(); }, preload: preloadFor({ metal: key }) });
+  }
+  document.getElementById('metalName').textContent = manifest.metals[state.metal].label;
+
+  const shapesEl = document.getElementById('shapes');
+  shapesEl.replaceChildren();
+  for (const s of shapesOf(c)) {
+    optButton(shapesEl, { label: manifest.shapes[s]?.label ?? s, sub: s === c.designedShape ? 'As designed' : '', icon: shapeIcon(s), pressed: s === state.shape,
+      onPick: () => { state.shape = s; update(); }, preload: preloadFor({ shape: s }) });
+  }
+  document.getElementById('shapeName').textContent = manifest.shapes[state.shape]?.label ?? state.shape;
+
+  const coloursEl = document.getElementById('colours');
+  coloursEl.replaceChildren();
+  for (const [key, col] of Object.entries(manifest.colours)) {
+    optButton(coloursEl, { label: col.label, swatch: col.swatch, pressed: key === state.colour,
+      onPick: () => { state.colour = key; update(); }, preload: preloadFor({ colour: key }) });
+  }
+  document.getElementById('colourName').textContent = `${manifest.colours[state.colour].label} diamond`;
+}
+
+// ─── Media ─────────────────────────────────────────────────────────────────
+let current = null; // the element on the stage
+function setStage(el) {
+  if (current && current !== el) current.remove();
+  if (el && !el.isConnected) stage.prepend(el);
+  current = el;
+  statusEl.hidden = true;
+}
+
+async function showImage(v, view) {
+  const full = url(v, `${view}.webp`), half = url(v, `${view}-half.webp`);
+  let img = current?.tagName === 'IMG' ? current : null;
+  const next = new Image();
+  next.alt = `${combos[state.combo].headLabel} in ${manifest.metals[state.metal].label} with a ${manifest.colours[state.colour].label.toLowerCase()} ${manifest.shapes[state.shape]?.label.toLowerCase() ?? ''} diamond, ${manifest.views.find((x) => x.id === view)?.label.toLowerCase()} view`;
+  next.srcset = `${half} ${manifest.halfSize}w, ${full} ${manifest.imageSize}w`;
+  next.sizes = '(max-width: 860px) 100vw, 640px';
+  next.src = full;
+  next.decoding = 'async';
+  next.fetchPriority = 'high';
+  // Swap only once the new photo is decoded, so the stage never flashes empty.
+  try { await next.decode(); } catch {}
+  if (img && img.isConnected) { next.className = ''; img.replaceWith(next); current = next; }
+  else setStage(next);
+  zoomEl.style.backgroundImage = `url("${full}")`;
+  // Then fetch the other views of this ring in the background.
+  for (const other of manifest.views) if (other.id !== view) warm(url(v, `${other.id}-half.webp`));
+}
+
+function showVideo(v) {
+  const video = document.createElement('video');
+  video.muted = true; video.loop = true; video.autoplay = true; video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.preload = 'auto';
+  video.poster = url(v, v.poster ?? 'threequarter.webp');
+  video.src = url(v, v.video);
+  video.setAttribute('aria-label', '360° view of the ring');
+  setStage(video);
+  video.play().catch(() => {});
+}
+
+let frame = null;
+function show3d() {
+  const c = combos[state.combo];
+  const options = { head: c.head, shank: c.shank, metal: state.metal, stone: STONE_FOR_COLOUR[state.colour], shape: state.shape, studio: 'white' };
+  if (frame) {
+    frame.contentWindow?.postMessage({ type: 'ring-viewer:set', options }, '*');
+    setStage(frame);
+    return;
+  }
+  frame = document.createElement('iframe');
+  frame.title = 'Live 3D view of the ring';
+  const q = new URLSearchParams({ embed: '', studio: 'white', rotate: '1', head: c.head, shank: c.shank, metal: state.metal, stone: options.stone, shape: state.shape });
+  frame.src = `index.html?${q.toString().replace('embed=&', 'embed&')}`;
+  setStage(frame);
+}
+
+function renderThumbs(v) {
+  thumbsEl.replaceChildren();
+  const add = (id, label, content, disabled) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'thumb';
+    b.disabled = disabled;
+    b.setAttribute('aria-pressed', String(state.view === id));
+    b.setAttribute('aria-label', label);
+    b.innerHTML = content;
+    b.addEventListener('click', () => { state.view = id; state.auto3d = false; update(false); });
+    thumbsEl.append(b);
+  };
+  for (const view of manifest.views) {
+    add(view.id, `${view.label} view`, v ? `<img src="${url(v, `${view.id}-half.webp`)}" alt="" loading="lazy" decoding="async">` : `<span>${view.label}</span>`, !v);
+  }
+  add('360', '360° video', v?.video ? `<img src="${url(v, v.poster ?? 'threequarter-half.webp')}" alt="" loading="lazy"><span class="tag">360°</span>` : '<span>360°</span>', !v?.video);
+  add('3d', 'Live 3D', '<span>3D</span>', false);
+}
+
+function update(optionsChanged = true) {
+  if (optionsChanged) renderOptions();
+  const v = variantOf();
+  noteEl.hidden = true;
+  badgeEl.hidden = true;
+  if (!v) {
+    // No photos for this combination yet: show it in live 3D until they are rendered.
+    if (state.view !== '3d') { state.view = '3d'; state.auto3d = true; }
+    noteEl.textContent = 'Photos for this combination have not been rendered yet, so it is shown in live 3D. Once rendered, they load here like the others.';
+    noteEl.hidden = false;
+  } else if (state.auto3d) {
+    state.view = 'threequarter';
+    state.auto3d = false;
+  }
+  renderThumbs(v);
+  stage.classList.remove('zooming');
+  if (state.view === '3d') { show3d(); badgeEl.textContent = 'Live 3D · drag to turn'; badgeEl.hidden = false; }
+  else if (state.view === '360') { showVideo(v); badgeEl.textContent = '360° · rendered video'; badgeEl.hidden = false; }
+  else showImage(v, state.view);
+}
+
+// Hover zoom on desktop: a 2.2x view of the full-size photo follows the pointer.
+stage.addEventListener('pointermove', (e) => {
+  if (e.pointerType !== 'mouse' || current?.tagName !== 'IMG') return;
+  const r = stage.getBoundingClientRect();
+  zoomEl.style.backgroundPosition = `${((e.clientX - r.left) / r.width) * 100}% ${((e.clientY - r.top) / r.height) * 100}%`;
+  stage.classList.add('zooming');
+});
+stage.addEventListener('pointerleave', () => stage.classList.remove('zooming'));
+
+// Starting choices from the address (?setting=&metal=&shape=&colour=&view=), for links and the ring builder.
+const pick = combos.findIndex((c) => c.id === params.get('setting'));
+if (pick >= 0) { state.combo = pick; state.shape = combos[pick].designedShape; }
+if (manifest.metals[params.get('metal')]) state.metal = params.get('metal');
+if (manifest.shapes[params.get('shape')]) state.shape = params.get('shape');
+if (manifest.colours[params.get('colour')]) state.colour = params.get('colour');
+if (params.get('view')) state.view = params.get('view');
+update();
+</script>

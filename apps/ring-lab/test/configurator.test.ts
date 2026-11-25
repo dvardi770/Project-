@@ -1,0 +1,214 @@
+import { describe, expect, it } from 'vitest';
+// @ts-expect-error plain JavaScript module without type declarations
+import { cut, caratsOf, widthForCarats, solidFromPlanes, SHAPES } from '../configurator/engine/cuts.mjs';
+// @ts-expect-error plain JavaScript module without type declarations
+import { buildRing, HEADS, SHANKS } from '../configurator/engine/ring.mjs';
+// @ts-expect-error plain JavaScript module without type declarations
+import { buildBand, PROFILES, BAND_SHAPES, LAYOUTS, SETTINGS, autoThickness } from '../configurator/engine/band.mjs';
+// @ts-expect-error plain JavaScript module without type declarations
+import { Mesh, band } from '../configurator/engine/geometry.mjs';
+// @ts-expect-error plain JavaScript module without type declarations
+import { priceRing, priceBand, centreFromList } from '../configurator/engine/pricing.mjs';
+// @ts-expect-error plain JavaScript module without type declarations
+import { usToDiameter, euToDiameter } from '../configurator/engine/materials.mjs';
+
+type Geometry = { positions: Float32Array; normals: Float32Array; index: Uint16Array | Uint32Array };
+
+const allFinite = (a: ArrayLike<number>) => Array.prototype.every.call(a, Number.isFinite);
+
+describe('gem cuts', () => {
+  it('make closed convex solids whose corners lie inside every facet plane', () => {
+    for (const key of [...Object.keys(SHAPES), 'round-accent', 'princess-accent']) {
+      const c = cut(key);
+      expect(c.volume, key).toBeGreaterThan(0);
+      for (let i = 0; i < c.positions.length; i += 3) {
+        for (let k = 0; k < c.planeCount; k++) {
+          const d = c.planes[k * 4] * c.positions[i] + c.planes[k * 4 + 1] * c.positions[i + 1] + c.planes[k * 4 + 2] * c.positions[i + 2] - c.planes[k * 4 + 3];
+          expect(d, key).toBeLessThan(1e-4);
+        }
+      }
+    }
+  });
+
+  it('weigh what real stones of that size weigh', () => {
+    // A 1 ct round brilliant is about 6.4–6.5 mm across.
+    expect(widthForCarats('round', 1)).toBeGreaterThan(6.3);
+    expect(widthForCarats('round', 1)).toBeLessThan(6.6);
+    expect(caratsOf('round', 6.5)).toBeCloseTo(1.05, 1);
+    // A 1 ct oval is about 7.7 × 5.7 mm; an emerald cut about 7 × 5 mm.
+    const oval = widthForCarats('oval', 1);
+    expect(oval * cut('oval').ratio).toBeGreaterThan(7.4);
+    expect(oval * cut('oval').ratio).toBeLessThan(8.1);
+    const em = widthForCarats('emerald', 1);
+    expect(em).toBeGreaterThan(4.8);
+    expect(em).toBeLessThan(5.4);
+  });
+
+  it('have an excellent brilliant’s depth (about 60% of the width)', () => {
+    for (const key of ['round', 'oval', 'cushion', 'pear', 'marquise']) {
+      const c = cut(key);
+      expect(c.top - c.bottom, key).toBeGreaterThan(0.57);
+      expect(c.top - c.bottom, key).toBeLessThan(0.65);
+    }
+  });
+
+  it('keep accent stones cheap to trace', () => {
+    expect(cut('round-accent').planeCount).toBeLessThanOrEqual(40);
+    expect(cut('round').planeCount).toBeLessThanOrEqual(128);
+  });
+
+  it('turn half-spaces into a cube', () => {
+    const planes = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].map((n) => ({ n, d: 1 }));
+    const solid = solidFromPlanes(planes);
+    expect(solid.corners).toHaveLength(8);
+    expect(solid.facets).toHaveLength(6);
+  });
+});
+
+describe('ring builder', () => {
+  it('sets halo stones tight round the centre stone', () => {
+    const r = buildRing({ head: 'halo', shank: 'classic' });
+    const centre = r.stones.find((s: { role: string }) => s.role === 'centre').matrices[0];
+    const width = Math.hypot(centre[0], centre[1], centre[2]);
+    const halo = r.stones.find((s: { role: string }) => s.role === 'accent').matrices as number[][];
+    for (const m of halo) {
+      const d = Math.hypot(m[0], m[1], m[2]);
+      // Gap between the centre stone's girdle and the halo stone's edge, in mm.
+      const gap = Math.hypot(m[12], m[14]) - width / 2 - d / 2;
+      expect(gap).toBeLessThan(0.25);
+      expect(gap).toBeGreaterThan(-0.05);
+    }
+  });
+
+  it('sets channel stones below the top of their rails', () => {
+    const r = buildRing({ shank: 'channel', head: 'four-prong' });
+    const ch = r.stones.find((s: { cut: string }) => s.cut === 'princess-accent').matrices as number[][];
+    const R = usToDiameter(6) / 2;
+    const [tBottom, tTop] = SHANKS.channel.t;
+    for (const m of ch) {
+      const d = Math.hypot(m[0], m[1], m[2]);
+      const table = Math.hypot(m[12], m[13]) + 0.127 * d;
+      // The shank's outer surface there (its thickness tapers from bottom to top).
+      const phi = Math.atan2(Math.abs(m[12]), m[13]);
+      const surface = R + tBottom + (tTop - tBottom) * (1 + Math.cos(phi)) / 2;
+      expect(table).toBeLessThan(surface);
+      expect(table).toBeGreaterThan(surface - 0.2);
+    }
+  });
+
+  it('builds every head on every shank', () => {
+    for (const head of Object.keys(HEADS)) {
+      for (const shank of Object.keys(SHANKS)) {
+        const r = buildRing({ head, shank });
+        for (const part of [r.metal.head, r.metal.shank] as Geometry[]) {
+          expect(part.index.length, `${head}/${shank}`).toBeGreaterThan(0);
+          expect(allFinite(part.positions) && allFinite(part.normals), `${head}/${shank}`).toBe(true);
+        }
+        expect(r.specs.metal.grams, `${head}/${shank}`).toBeGreaterThan(1.2);
+        expect(r.specs.metal.grams, `${head}/${shank}`).toBeLessThan(7);
+      }
+    }
+  });
+
+  it('sets the centre stone clear of the band', () => {
+    for (const shape of Object.keys(SHAPES)) {
+      for (const head of Object.keys(HEADS)) {
+        const r = buildRing({ shape, head, carat: 2 });
+        const m = r.stones.find((s: { role: string }) => s.role === 'centre').matrices[0];
+        const width = Math.hypot(m[0], m[1], m[2]);
+        const culet = m[13] + cut(shape).bottom * width;
+        expect(culet, `${shape}/${head}`).toBeGreaterThan(r.frame.radius + 0.5);
+      }
+    }
+  });
+
+  it('sizes the stone from its carat and the band from the ring size', () => {
+    const small = buildRing({ carat: 0.5 }), big = buildRing({ carat: 3 });
+    expect(big.specs.centre.mm[1]).toBeGreaterThan(small.specs.centre.mm[1] * 1.6);
+    const size4 = buildRing({ size: 4 }), size9 = buildRing({ size: 9 });
+    expect(size9.frame.radius - size4.frame.radius).toBeCloseTo((usToDiameter(9) - usToDiameter(4)) / 2, 1);
+  });
+
+  it('counts accent stones and their carats', () => {
+    const plain = buildRing({ shank: 'classic', head: 'four-prong' });
+    expect(plain.specs.accents.count).toBe(0);
+    const pave = buildRing({ shank: 'pave', head: 'halo' });
+    // A 1 ct round halo holds about 16–20 small stones; the pavé band about 22.
+    expect(pave.specs.accents.count).toBeGreaterThan(30);
+    // Pavé melee of about 1.2 mm weighs about 0.007 ct each.
+    expect(pave.specs.accents.carats / pave.specs.accents.count).toBeGreaterThan(0.004);
+    expect(pave.specs.accents.carats / pave.specs.accents.count).toBeLessThan(0.02);
+  });
+
+  it('weighs coloured stones by their own density', () => {
+    const diamond = buildRing({ gem: 'diamond', carat: 1 }), ruby = buildRing({ gem: 'ruby', carat: 1 });
+    expect(ruby.specs.centre.carats).toBeGreaterThan(diamond.specs.centre.carats);
+  });
+});
+
+describe('band builder', () => {
+  it('builds every profile, shape, layout and setting', () => {
+    for (const profile of Object.keys(PROFILES)) for (const shape of Object.keys(BAND_SHAPES)) {
+      const b = buildBand({ profile, shape });
+      expect(b.parts.length).toBeGreaterThan(0);
+      for (const p of b.parts) expect(allFinite(p.geometry.positions) && allFinite(p.geometry.normals)).toBe(true);
+    }
+    for (const layout of Object.keys(LAYOUTS)) expect(buildBand({ layout }).specs.metals.length).toBe(layout === 'single' ? 1 : 2);
+    for (const setting of Object.keys(SETTINGS)) {
+      const b = buildBand({ setting });
+      if (setting === 'none') expect(b.specs.stones.count).toBe(0);
+      else expect(b.specs.stones.count).toBeGreaterThan(0);
+    }
+  });
+
+  it('weighs like a real band and shares the weight between two metals', () => {
+    // A 4 mm, 1.7 mm thick 14k band in a mid size weighs about 4–6 g.
+    const single = buildBand({ layout: 'single', width: 4, size: 54 });
+    expect(single.specs.grams).toBeGreaterThan(3.5);
+    expect(single.specs.grams).toBeLessThan(7);
+    const split = buildBand({ layout: 'split', metal: 'yellow', metal2: 'yellow', width: 4, size: 54 });
+    expect(split.specs.grams).toBeCloseTo(single.specs.grams, 0);
+    expect(buildBand({ width: 7 }).specs.grams).toBeGreaterThan(buildBand({ width: 4 }).specs.grams * 1.6);
+    expect(buildBand({ metal: 'platinum' }).specs.grams).toBeGreaterThan(buildBand({ metal: 'yellow' }).specs.grams * 1.4);
+  });
+
+  it('matches thickness to width when asked', () => {
+    expect(buildBand({ width: 6, autoThickness: true }).specs.thickness).toBe(autoThickness(6));
+    expect(buildBand({ width: 6, autoThickness: false, thickness: 2.8 }).specs.thickness).toBe(2.8);
+  });
+
+  it('faces its outer surface away from the finger', () => {
+    const b = buildBand({ layout: 'single' });
+    const outer = b.parts.find((p: { inner: boolean }) => !p.inner).geometry as Geometry;
+    let best = 0, bestN = 0;
+    for (let k = 0; k < outer.positions.length; k += 3) {
+      const r = Math.hypot(outer.positions[k], outer.positions[k + 1]);
+      if (r > best) { best = r; bestN = (outer.normals[k] * outer.positions[k] + outer.normals[k + 1] * outer.positions[k + 1]) / r; }
+    }
+    expect(bestN).toBeGreaterThan(0.5);
+    expect(best).toBeGreaterThan(euToDiameter(52) / 2);
+  });
+});
+
+describe('geometry', () => {
+  it('measures a swept band’s volume as area × path of its centroid', () => {
+    const m = new Mesh();
+    // A 2 × 4 mm rectangle swept round a 9 mm radius: 8 mm² × 2π × 10 mm.
+    const rect = [[0, -2], [2, -2], [2, 2], [0, 2]];
+    band(m, { r: 9, segments: 512, profile: () => rect, sharp: [0, 1, 2, 3] });
+    expect(m.volume).toBeCloseTo(8 * 2 * Math.PI * 10, -1);
+  });
+});
+
+describe('pricing', () => {
+  it('adds up its lines and follows the design', () => {
+    const ring = buildRing({});
+    const p = priceRing({ ...ring.specs, karat: '14k' });
+    expect(p.total).toBe(p.lines.reduce((s: number, l: { amount: number }) => s + l.amount, 0));
+    const bigger = priceRing({ ...buildRing({ carat: 2 }).specs, karat: '14k' });
+    expect(bigger.total).toBeGreaterThan(p.total);
+    expect(centreFromList('diamond', 2)).toBeGreaterThan(2 * centreFromList('diamond', 1));
+    const band = priceBand(buildBand({ engraving: 'Always' }).specs);
+    expect(band.lines.some((l: { key: string }) => l.key === 'engraving')).toBe(true);
+  });
+});

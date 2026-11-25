@@ -232,10 +232,22 @@ function studioMaps(renderer) {
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(60, 48, 24), dome));
   const boxes = [];
+  // Softboxes have diffusers: bright in the middle, fading towards their edges, so polished
+  // metal shows soft-edged highlights as in a photo, not hard rectangles. Small round lights stay
+  // crisp: they are the pin-point glints that make stones sparkle.
+  const feathered = () => new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    uniforms: { level: { value: 1 } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float level; varying vec2 vUv;
+      void main() { vec2 e = min(vUv, 1.0 - vUv) * 2.0; float f = smoothstep(0.0, 0.6, e.x) * smoothstep(0.0, 0.6, e.y); gl_FragColor = vec4(vec3(level * (0.2 + 0.8 * f)), 1.0); }`,
+  });
   const box = (w, h, x, y, z, round = false) => {
-    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+    const material = round ? new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }) : feathered();
+    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w, h), material);
     m.position.set(x, y, z);
     m.lookAt(0, 0, 0);
+    m.userData.setLevel = (v) => { if (round) material.color.setScalar(v); else material.uniforms.level.value = v; };
     scene.add(m);
     boxes.push(m);
     return m;
@@ -244,19 +256,19 @@ function studioMaps(renderer) {
     box(36, 36, 0, 46, 0), box(8, 48, -40, 8, 16), box(8, 48, 38, 8, -12),
     box(32, 12, 12, 14, 46), box(38, 6, 0, 12, -46), box(16, 6, -30, -6, -30),
   ];
-  const sparks = [[22, 34, 26], [-26, 28, -14], [6, 40, -22], [-18, 22, 34], [34, 18, 6], [-34, 12, -30]].map(([x, y, z]) => box(2.2, 0, x, y, z, true));
+  const sparks = [[22, 34, 26], [-26, 28, -14], [6, 40, -22], [-18, 22, 34], [34, 18, 6], [-34, 12, -30], [12, 44, 10], [-8, 36, 30], [28, 26, -24], [-38, 20, 8], [0, 30, -38], [40, 32, -6]].map(([x, y, z]) => box(1.8, 0, x, y, z, true));
   const flags = [[-44, -16], [44, 18], [18, -44], [-14, 46]].map(([x, z]) => box(9, 62, x, 6, z));
   const make = (o) => {
     dome.uniforms.top.value = o.top; dome.uniforms.mid.value = o.mid; dome.uniforms.low.value = o.low;
-    keys.forEach((k, i) => k.material.color.setScalar(o.keys[i]));
-    sparks.forEach((s) => s.material.color.setScalar(o.spark));
-    flags.forEach((f) => f.material.color.setScalar(o.flag));
+    keys.forEach((k, i) => k.userData.setLevel(o.keys[i] * 1.25));
+    sparks.forEach((s) => s.userData.setLevel(o.spark));
+    flags.forEach((f) => f.userData.setLevel(o.flag));
     const rt = new THREE.WebGLCubeRenderTarget(o.size, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
     new THREE.CubeCamera(0.5, 200, rt).update(renderer, scene);
     return rt;
   };
   const metalCube = make({ top: 1.3, mid: 0.58, low: 0.72, keys: [2.8, 5.2, 4.4, 2.2, 3.6, 2.4], spark: 7, flag: 0.2, size: 512 });
-  const stoneCube = make({ top: 0.75, mid: 0.17, low: 0.05, keys: [3.4, 7.5, 6.0, 2.4, 4.5, 3.0], spark: 16, flag: 0.0, size: 512 });
+  const stoneCube = make({ top: 0.95, mid: 0.26, low: 0.06, keys: [4.0, 8.5, 7.0, 3.0, 5.0, 3.4], spark: 18, flag: 0.0, size: 512 });
   const pmrem = new THREE.PMREMGenerator(renderer);
   const metal = pmrem.fromCubemap(metalCube.texture).texture;
   pmrem.dispose();
@@ -382,6 +394,11 @@ export class Stage {
 
     this.gemMaterials = new Map();
     this.metalMaterials = new Map();
+    // Ambient occlusion baked per vertex (see bakeOcclusion); metal materials read it.
+    const none = new THREE.DataTexture(new Uint8Array([255, 255, 0, 255]), 1, 1);
+    none.needsUpdate = true;
+    this.aoUniforms = { aoTex: { value: none }, aoSize: { value: new THREE.Vector2(1, 1) }, aoAmount: { value: 0 } };
+    this.ao = null;
     this.objects = [];
     this.samples = 0;
     this.frameTimes = [];
@@ -451,6 +468,24 @@ export class Stage {
       m.normalMap = extra.normalMap; m.normalScale.set(1, 1);
       m.map = extra.map; m.roughnessMap = extra.roughnessMap; m.roughness = 1;
     }
+    // Crevices (under the basket, between prongs and halo stones, inside the band) see less of
+    // the studio: the baked occlusion dims their reflections, as in a photograph.
+    m.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.aoUniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aoIndex;\nuniform sampler2D aoTex;\nuniform vec2 aoSize;\nvarying float vAo;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          { vec2 c = (vec2(mod(aoIndex, aoSize.x), floor(aoIndex / aoSize.x)) + 0.5) / aoSize;
+            vec4 a = textureLod(aoTex, c, 0.0); vAo = a.y > 1e-4 ? a.x / a.y : 1.0; }`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float aoAmount;\nvarying float vAo;')
+        .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+          { float occ = mix(1.0, clamp(vAo * 1.12, 0.0, 1.0), aoAmount);
+            reflectedLight.indirectDiffuse *= occ;
+            float dotNVo = saturate(dot(geometryNormal, geometryViewDir));
+            reflectedLight.indirectSpecular *= computeSpecularOcclusion(dotNVo, occ, material.roughness); }`);
+    };
+    m.customProgramCacheKey = () => 'metal-baked-occlusion';
     this.metalMaterials.set(key, m);
     return m;
   }
@@ -499,8 +534,140 @@ export class Stage {
     this.stats.triangles = built.triangles;
     this.root.updateMatrixWorld(true);
     this.bakeShadow();
+    this.bakeOcclusion();
     if (refit || !this.fitted) this.fit(!this.fitted ? false : true);
     this.wake();
+  }
+
+  /**
+   * Ambient occlusion for every metal vertex, worked out on the GPU: the design is seen from 64
+   * directions round it; for each, a depth picture shows which vertices are hidden from that
+   * side, and the visible share (weighted towards each vertex's normal) is summed per vertex.
+   * A few directions are done per frame, so changing a choice never stalls the turning ring;
+   * the shading fades in when all are done. It costs nothing afterwards.
+   */
+  bakeOcclusion() {
+    const metal = this.objects.filter((o) => o.isMesh && o.userData.owned);
+    if (!this.ao) {
+      const depth = new THREE.WebGLRenderTarget(512, 512, { depthBuffer: true });
+      depth.depthTexture = new THREE.DepthTexture(512, 512);
+      const points = new THREE.ShaderMaterial({
+        uniforms: {
+          depthTex: { value: depth.depthTexture }, viewProj: { value: new THREE.Matrix4() }, dir: { value: new THREE.Vector3() },
+          aoSize: { value: new THREE.Vector2() }, bias: { value: 0.002 }, offset: { value: 0.04 },
+        },
+        vertexShader: `
+          attribute float aoIndex;
+          uniform sampler2D depthTex; uniform mat4 viewProj; uniform vec3 dir; uniform vec2 aoSize; uniform float bias; uniform float offset;
+          varying vec2 vSum;
+          void main() {
+            vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
+            vec3 wn = normalize(mat3(modelMatrix) * normal);
+            float facing = dot(wn, dir);
+            float seen = 0.0;
+            if (facing > 0.0) {
+              vec4 c = viewProj * vec4(wp + wn * offset, 1.0);
+              vec3 ndc = c.xyz / c.w;
+              float nearest = textureLod(depthTex, ndc.xy * 0.5 + 0.5, 0.0).r;
+              seen = (ndc.z * 0.5 + 0.5) - bias <= nearest ? 1.0 : 0.0;
+            }
+            vSum = vec2(seen * max(facing, 0.0), max(facing, 0.0));
+            vec2 cell = vec2(mod(aoIndex, aoSize.x), floor(aoIndex / aoSize.x)) + 0.5;
+            gl_Position = vec4(cell / aoSize * 2.0 - 1.0, 0.0, 1.0);
+            gl_PointSize = 1.0;
+          }`,
+        fragmentShader: 'varying vec2 vSum; void main() { gl_FragColor = vec4(vSum, 0.0, 1.0); }',
+        blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true,
+      });
+      const dirs = [];
+      const K = 64;
+      for (let i = 0; i < K; i++) {
+        const y = 1 - (2 * (i + 0.5)) / K, r = Math.sqrt(1 - y * y), a = i * Math.PI * (3 - Math.sqrt(5));
+        dirs.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r));
+      }
+      this.ao = { depth, points, dirs, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10), scene: new THREE.Scene(), hide: new THREE.MeshBasicMaterial({ colorWrite: false }), rt: null, job: null };
+    }
+    const ao = this.ao;
+    for (const c of [...ao.scene.children]) { ao.scene.remove(c); c.geometry.dispose(); }
+    let total = 0;
+    for (const mesh of metal) {
+      const count = mesh.geometry.attributes.position.count;
+      const index = new Float32Array(count);
+      for (let i = 0; i < count; i++) index[i] = total + i;
+      mesh.geometry.setAttribute('aoIndex', new THREE.BufferAttribute(index, 1));
+      // Points share the mesh's vertices, once each (no index: an indexed vertex would count twice).
+      const g = new THREE.BufferGeometry();
+      for (const name of ['position', 'normal', 'aoIndex']) g.setAttribute(name, mesh.geometry.attributes[name]);
+      const p = new THREE.Points(g, ao.points);
+      p.matrixAutoUpdate = false;
+      p.matrix.copy(mesh.matrixWorld);
+      p.frustumCulled = false;
+      ao.scene.add(p);
+      total += count;
+    }
+    const width = 1024, height = Math.max(1, Math.ceil(total / width));
+    if (!ao.rt || ao.rt.height !== height) {
+      ao.rt?.dispose();
+      ao.rt = new THREE.WebGLRenderTarget(width, height, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    }
+    const r = this.renderer;
+    r.setRenderTarget(ao.rt);
+    r.setClearColor(0x000000, 0);
+    r.clear();
+    r.setRenderTarget(null);
+    this.aoUniforms.aoTex.value = ao.rt.texture;
+    this.aoUniforms.aoSize.value.set(width, height);
+    this.aoUniforms.aoAmount.value = 0;
+    ao.points.uniforms.aoSize.value.set(width, height);
+    const sphere = this.bounds().getBoundingSphere(new THREE.Sphere());
+    ao.job = total ? { next: 0, sphere, fade: null } : null;
+  }
+
+  /** Does a few more directions of the occlusion bake; fades the result in when finished. */
+  stepOcclusion(now) {
+    const ao = this.ao, job = ao.job;
+    if (job.fade !== null) {
+      const k = Math.min((now - job.fade) / 450, 1);
+      this.aoUniforms.aoAmount.value = k * k * (3 - 2 * k);
+      if (k >= 1) ao.job = null;
+      return true;
+    }
+    const r = this.renderer;
+    const { center, radius } = job.sphere;
+    const cam = ao.camera;
+    cam.left = -radius; cam.right = radius; cam.top = radius; cam.bottom = -radius;
+    cam.near = 0.1; cam.far = radius * 4;
+    cam.updateProjectionMatrix();
+    ao.points.uniforms.bias.value = 0.08 / (cam.far - cam.near);
+    const hidden = [];
+    for (const o of this.objects) if (o.isInstancedMesh) { hidden.push(o); o.visible = false; }
+    const shadowWas = this.shadow.plane.visible;
+    this.shadow.plane.visible = false;
+    const autoClear = r.autoClear;
+    for (let n = 0; n < 4 && job.next < ao.dirs.length; n++, job.next++) {
+      const d = ao.dirs[job.next];
+      cam.position.copy(center).addScaledVector(d, radius * 2);
+      cam.up.set(Math.abs(d.y) > 0.99 ? 1 : 0, Math.abs(d.y) > 0.99 ? 0 : 1, 0);
+      cam.lookAt(center);
+      cam.updateMatrixWorld();
+      this.scene.overrideMaterial = ao.hide;
+      r.autoClear = true;
+      r.setRenderTarget(ao.depth);
+      r.clear();
+      r.render(this.scene, cam);
+      this.scene.overrideMaterial = null;
+      ao.points.uniforms.viewProj.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      ao.points.uniforms.dir.value.copy(d);
+      r.autoClear = false;
+      r.setRenderTarget(ao.rt);
+      r.render(ao.scene, cam);
+    }
+    r.autoClear = autoClear;
+    r.setRenderTarget(null);
+    for (const o of hidden) o.visible = true;
+    this.shadow.plane.visible = shadowWas;
+    if (job.next >= ao.dirs.length) job.fade = now;
+    return false;
   }
 
   /** three.js objects for a design's groups (metal meshes and instanced stones). */
@@ -570,10 +737,13 @@ export class Stage {
     t.camera.position.setFromSpherical(new THREE.Spherical(dist, (polar * Math.PI) / 180, (azimuth * Math.PI) / 180)).add(target);
     t.camera.lookAt(target);
     this.setGemMode(-1, 0);
+    const aoWas = this.aoUniforms.aoAmount.value;
+    this.aoUniforms.aoAmount.value = 0;
     r.setClearColor(0x000000, 0);
     r.setRenderTarget(t.rt);
     r.clear();
     r.render(t.scene, t.camera);
+    this.aoUniforms.aoAmount.value = aoWas;
     const c = this.post.compose.material.uniforms;
     const glow = c.glow.value;
     c.tColor.value = t.rt.texture; c.tGlow.value = t.black; c.glow.value = 0;
@@ -622,9 +792,9 @@ export class Stage {
     const head = headBox.getCenter(new THREE.Vector3());
     // Closer views are taken nearer the stage's top, leaving the lower part for the ring below.
     const views = {
-      overview: { box: whole, target: centre, polar: 72, azimuth: 32, margin: 0.84 },
+      overview: { box: whole, target: centre, polar: 72, azimuth: 32, margin: 0.9 },
       head: { box: headBox, target: head, polar: 64, azimuth: 24, margin: 0.62 },
-      top: { box: headBox, target: head, polar: 12, azimuth: 0, margin: 0.74 },
+      top: { box: headBox, target: head, polar: 12, azimuth: 0, margin: 0.6 },
       side: { box: whole, target: centre, polar: 84, azimuth: 90, margin: 0.86 },
       front: { box: whole, target: centre, polar: 86, azimuth: 0, margin: 0.86 },
       shank: { box: whole, target: centre, polar: 62, azimuth: 52, margin: 0.86 },
@@ -803,6 +973,8 @@ export class Stage {
     }
     // Turning resumes a few seconds after the shopper lets go.
     if (!this.tween && !this.interacting && this.wantsRotate && !this.controls.autoRotate && now - this.lastInput > 4500) this.controls.autoRotate = true;
+    // The occlusion bake runs a few directions per frame; its fade-in changes the picture.
+    if (this.ao?.job && this.stepOcclusion(now)) this.wake();
     this.moved = false;
     this.controls.update(dt);
     const moving = animating || this.moved || this.controls.autoRotate || this.interacting;

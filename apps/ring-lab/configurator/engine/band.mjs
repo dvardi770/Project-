@@ -11,6 +11,7 @@ import { Mesh, grid, bead, wire, matrix, vec } from './geometry.mjs';
 import { GEMS, gramsOf, metalLabel, euToDiameter } from './materials.mjs';
 
 const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
+const smoothstep = (a, b, x) => { const k = clamp((x - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); };
 const round = (x, d = 2) => Math.round(x * 10 ** d) / 10 ** d;
 const DEG = Math.PI / 180;
 
@@ -197,14 +198,43 @@ export function buildBand(input = {}) {
   const seams = zones.slice(1).map((z) => z[0]);
   const loop = profileLoop(o.profile, o.grooves, seams);
 
+  // Diamonds: across the band at s0; a channel is a groove cut along the band at that place.
+  const d = clamp(o.stoneSize, 1, 3);
+  const s0 = clamp(o.stonePosition, -0.6, 0.6) * Math.max(0, 1 - (d + 0.6) / w);
+  const surfQ = (sv) => {
+    let best = 0;
+    for (let i = 0; i < loop.length; i++) if (loop[i][2] === 'outer' && Math.abs(loop[i][0] - sv) < 0.03) best = Math.max(best, loop[i][1]);
+    return best || 1;
+  };
+  const qStones = surfQ(s0);
+  const channelSet = o.setting.startsWith('channel');
+  const fullRound = o.setting.endsWith('full');
+  const arc = fullRound ? 2 * Math.PI : Math.PI * 1.02;
+  const groove = channelSet ? {
+    half: (d / 2 + 0.02) / hw,
+    depth: cut('princess-accent').top * d + 0.1,
+    // Full depth along the stones, with steep walls at the ends of a half-way channel.
+    at: (phi) => {
+      if (fullRound) return 1;
+      const a = Math.atan2(Math.sin(phi), Math.cos(phi)), e = 0.006, h = arc / 2;
+      return (1 - smoothstep(h - e, h + e, a)) * smoothstep(-h - e, -h + e, a);
+    },
+  } : null;
+
   // φ-dependent placement: wave shapes move the band along the finger; wavy ones change width.
-  const segments = o.shape === 'wavy' || o.shape === 'wave' ? 384 : o.shape === 'classic' ? 256 : 320;
-  const place = (phi, s, q) => {
+  const segments = o.shape === 'wavy' || o.shape === 'wave' ? 384 : o.shape === 'classic' && !channelSet ? 256 : 384;
+  const place = (phi, s, q, cutGroove = true) => {
     let v = s * hw, k = shapeFactor(o.shape, phi, R, t);
-    if (o.shape === 'wave') v += 0.32 * w * Math.sin(2 * phi);
-    if (o.shape === 'wavy') v = s * hw * (1 + 0.16 * Math.sin(9 * phi)) + 0.12 * w * Math.sin(9 * phi);
+    if (o.shape === 'wave') v += 0.22 * w * Math.sin(2 * phi);
+    // Wavy: a gentle ripple round the band, as on a real wavy band.
+    if (o.shape === 'wavy') v = s * hw * (1 + 0.05 * Math.sin(7 * phi)) + 0.07 * w * Math.sin(7 * phi);
     // The outer surface follows the shape; the inside stays round.
-    const u = q >= 0 ? q * t * (1 + (k - 1) * clamp(q / 0.3, 0, 1)) : q * t;
+    const lift = (qq) => qq * t * (1 + (k - 1) * clamp(qq / 0.3, 0, 1));
+    let u = q >= 0 ? lift(q) : q * t;
+    if (groove && cutGroove && q > 0.2 && Math.abs(s - s0) < groove.half) {
+      const g = groove.at(phi);
+      if (g > 0) u = Math.min(u, lift(qStones) - groove.depth * g);
+    }
     const r = R + u;
     return [r * Math.sin(phi), r * Math.cos(phi), v];
   };
@@ -252,18 +282,11 @@ export function buildBand(input = {}) {
   const stones = [];
   const extra = new Mesh();
   let stoneCut = 'round-accent';
-  const d = clamp(o.stoneSize, 1, 3);
   if (o.setting !== 'none') {
-    const s0 = clamp(o.stonePosition, -0.6, 0.6) * Math.max(0, 1 - (d + 0.6) / w);
-    const surfQ = (s) => {
-      let best = 0;
-      for (let i = 0; i < loop.length; i++) if (loop[i][2] === 'outer' && Math.abs(loop[i][0] - s) < 0.03) best = Math.max(best, loop[i][1]);
-      return best || 1;
-    };
-    const q = surfQ(s0);
+    const q = qStones;
     const at = (phi) => {
       const k = shapeFactor(o.shape, phi, R, t);
-      const p = place(phi, s0, q);
+      const p = place(phi, s0, q, false);
       const radial = [Math.sin(phi), Math.cos(phi), 0];
       return { p: vec.sub(p, vec.scale(radial, 0.02)), radial, k };
     };
@@ -289,29 +312,24 @@ export function buildBand(input = {}) {
         wire(extra, ring, { radius: size * 0.07, closed: true, sides: 8 });
       }
     } else {
-      const channel = o.setting.startsWith('channel');
-      const full = o.setting.endsWith('full');
+      const channel = channelSet, full = fullRound;
       stoneCut = channel ? 'princess-accent' : 'round-accent';
       const size = channel ? d : Math.min(d, 1.6);
       const pitch = channel ? size + 0.02 : size + 0.1;
-      const arc = full ? 2 * Math.PI : Math.PI * 1.02;
-      const count = Math.floor((arc * (R + t)) / pitch);
-      const step = arc / count;
-      const startPhi = full ? 0 : -arc / 2 + step / 2;
-      for (let k = 0; k < count; k++) put(startPhi + k * step, size, stoneCut);
+      const usable = full ? arc : arc - (channel ? 0.12 / (R + t) : 0);
+      const count = Math.floor((usable * (R + t)) / pitch);
+      const step = full ? arc / count : pitch / (R + t);
+      const startPhi = full ? 0 : -((count - 1) * step) / 2;
       if (channel) {
-        // The channel's walls: low rails either side of the stones.
-        for (const side of [-1, 1]) {
-          const path = [];
-          const steps = full ? 360 : 180;
-          for (let i = 0; i <= (full ? steps - 1 : steps); i++) {
-            const phi = full ? (i / steps) * 2 * Math.PI : -arc / 2 + (arc * i) / steps;
-            const { p, radial } = at(phi);
-            path.push(vec.add(vec.add(p, vec.scale(radial, 0.08)), [0, 0, side * (size / 2 + 0.12)]));
-          }
-          wire(extra, path, { radius: 0.16, sides: 8, closed: full, section: [1, 1.2] });
+        // In the groove, tables just below the band's surface; the groove's walls hold them.
+        const crown = cut('princess-accent').top * size;
+        for (let k = 0; k < count; k++) {
+          const { p, radial } = at(startPhi + k * step);
+          const x = vec.unit(vec.cross(radial, [0, 0, 1]));
+          stones.push(matrix(x, radial, vec.cross(x, radial), size, vec.sub(p, vec.scale(radial, 0.03 + crown))));
         }
       } else {
+        for (let k = 0; k < count; k++) put(startPhi + k * step, size, stoneCut);
         // Beads between neighbours, on both sides of the line.
         for (let k = 0; k < (full ? count : count + 1); k++) {
           const phi = startPhi + (k - 0.5) * step;
@@ -329,7 +347,7 @@ export function buildBand(input = {}) {
     const phi = ((i + 0.5) / steps) * 2 * Math.PI;
     const k = shapeFactor(o.shape, phi, R, t);
     const tt = t * (0.5 + 0.5 * k);    // average thickness scale across the profile at this angle
-    const width = o.shape === 'wavy' ? hw * (1 + 0.16 * Math.sin(9 * phi)) : hw;
+    const width = o.shape === 'wavy' ? hw * (1 + 0.05 * Math.sin(7 * phi)) : hw;
     if (o.layout === 'inside') {
       // A layer 0.35 mm thick on the inside in the second metal, the rest in the first.
       const all = areaOf(loop, width, tt);
@@ -345,6 +363,8 @@ export function buildBand(input = {}) {
     }
   }
   volumes[1] += extra.volume;
+  // The channel's groove is metal taken away.
+  if (groove) volumes[zoneAt(s0)] -= (d + 0.04) * groove.depth * (R + t) * arc;
 
   const metals = [{ zone: 1, metal: o.metal }];
   if (o.layout !== 'single') metals.push({ zone: 2, metal: o.metal2 });

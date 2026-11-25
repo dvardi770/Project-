@@ -66,6 +66,36 @@ describe('gem cuts', () => {
 });
 
 describe('ring builder', () => {
+  it('sets halo stones tight round the centre stone', () => {
+    const r = buildRing({ head: 'halo', shank: 'classic' });
+    const centre = r.stones.find((s: { role: string }) => s.role === 'centre').matrices[0];
+    const width = Math.hypot(centre[0], centre[1], centre[2]);
+    const halo = r.stones.find((s: { role: string }) => s.role === 'accent').matrices as number[][];
+    for (const m of halo) {
+      const d = Math.hypot(m[0], m[1], m[2]);
+      // Gap between the centre stone's girdle and the halo stone's edge, in mm.
+      const gap = Math.hypot(m[12], m[14]) - width / 2 - d / 2;
+      expect(gap).toBeLessThan(0.25);
+      expect(gap).toBeGreaterThan(-0.05);
+    }
+  });
+
+  it('sets channel stones below the top of their rails', () => {
+    const r = buildRing({ shank: 'channel', head: 'four-prong' });
+    const ch = r.stones.find((s: { cut: string }) => s.cut === 'princess-accent').matrices as number[][];
+    const R = usToDiameter(6) / 2;
+    const [tBottom, tTop] = SHANKS.channel.t;
+    for (const m of ch) {
+      const d = Math.hypot(m[0], m[1], m[2]);
+      const table = Math.hypot(m[12], m[13]) + 0.127 * d;
+      // The shank's outer surface there (its thickness tapers from bottom to top).
+      const phi = Math.atan2(Math.abs(m[12]), m[13]);
+      const surface = R + tBottom + (tTop - tBottom) * (1 + Math.cos(phi)) / 2;
+      expect(table).toBeLessThan(surface);
+      expect(table).toBeGreaterThan(surface - 0.2);
+    }
+  });
+
   it('builds every head on every shank', () => {
     for (const head of Object.keys(HEADS)) {
       for (const shank of Object.keys(SHANKS)) {
@@ -103,7 +133,8 @@ describe('ring builder', () => {
     const plain = buildRing({ shank: 'classic', head: 'four-prong' });
     expect(plain.specs.accents.count).toBe(0);
     const pave = buildRing({ shank: 'pave', head: 'halo' });
-    expect(pave.specs.accents.count).toBeGreaterThan(40);
+    // A 1 ct round halo holds about 16–20 small stones; the pavé band about 22.
+    expect(pave.specs.accents.count).toBeGreaterThan(30);
     // Pavé melee of about 1.2 mm weighs about 0.007 ct each.
     expect(pave.specs.accents.carats / pave.specs.accents.count).toBeGreaterThan(0.004);
     expect(pave.specs.accents.carats / pave.specs.accents.count).toBeLessThan(0.02);

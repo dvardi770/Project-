@@ -14,10 +14,13 @@ for a pair of rings.
   oval 7.7 × 5.6 mm, as real stones are (weights use each gem's density). Accent stones use a
   simpler cut with 33 facets, since they are a few pixels across.
 - **Ring parts** (`engine/ring.mjs`, `engine/geometry.mjs`): heads are prongs swept along curves
-  round the stone's outline, with basket rails, halos of small stones on beads, hidden and secret
-  halos, bezels and tulip petals. Shanks are cross-sections swept round the finger (tapering,
-  comfort fit, cathedral shoulders, flutes, French and U-pavé scallops), twisted or braided wires,
-  and rows of pavé, channel or eight-stone settings. Every combination builds in 10–40 ms. Metal
+  round the stone's outline, with basket rails; halos of small stones set tight round the centre
+  stone, with the centre's prongs rising through gaps between them; hidden and secret halos under
+  the girdle; bezels and tulip petals. Shanks are cross-sections swept round the finger (tapering,
+  comfort fit, flutes, French and U-pavé scallops), twisted or braided wires, and rows of pavé
+  (beads over the stones' edges, shared between rows) or eight-stone settings. Cathedral shoulders
+  are arches that leave the band and rise to the basket, open underneath. Channel stones sit in a
+  groove cut along the band, tables just below the walls that hold them (bands too). Every combination builds in 10–40 ms. Metal
   weight comes from the closed meshes' volume (a typical ring: 2.5–3.5 g), carats from each stone.
 - **Bands** (`engine/band.mjs`): eight profiles, width 2–10 mm, thickness matched to width or set,
   seven outer shapes (oval, cushion, hexagon, octagon, wave, wavy…), one or two metals (halves,
@@ -31,6 +34,13 @@ for a pair of rings.
     green and blue separately at slightly varied refractive indices, with sub-pixel offsets.
   - Metal: physically based, in a studio of softboxes rendered once into an environment map;
     polished, satin (anisotropic), matte and hammered finishes at real scale.
+  - Ambient occlusion baked per vertex on the GPU each time the design changes: the design is
+    seen from 64 directions and each metal vertex counts how much of the studio it can see, so
+    crevices under the basket, between prongs and halo stones and inside the band are shaded as in
+    a photo. A few directions are done per frame and the shading fades in, so a change never
+    stalls the turning ring, and it costs nothing afterwards.
+  - Softboxes with soft, diffused edges (bright centre, fading edges) and small crisp lights for
+    sparkle, rendered once into environment maps.
   - A contact shadow baked once per design; glow round the brightest sparkles; Khronos PBR Neutral
     tone mapping (made for product colours); 4× multisampling.
   - The resolution adapts to keep frames near 16 ms, rendering stops when nothing changes or the

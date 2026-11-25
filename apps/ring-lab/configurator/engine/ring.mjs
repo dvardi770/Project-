@@ -115,12 +115,12 @@ export function buildRing(input = {}) {
       beside(deg, 0, rp * 0.95, yGirdle),
       [tip[0] * 0.965 + n[0] * rp * 0.42, yGirdle + crownH * 0.5 + rp * 0.3, tip[2] * 0.965 + n[1] * rp * 0.42],
     ], { steps: 7 });
-    wire(headMesh, path, { radius: (t) => rp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(t * 1.4, 1)) - 0.06 * t), sides: 14 });
+    wire(headMesh, path, { radius: (t) => rp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(t * 1.4, 1)) - 0.06 * t), sides: 20 });
   }
   if (head.prongs) {
     // Basket: a rail round the pavilion joining the prongs, and a ring at the bottom on the band.
-    wire(headMesh, outlineLoop(72, 0.5, rp * 1.1, yGirdle - depth * 0.5), { radius: rp * 0.72, closed: true, sides: 10 });
-    wire(headMesh, outlineLoop(48, 0.72, rp * 0.6, bandTop + 0.25), { radius: rp * 0.85, closed: true, sides: 10 });
+    wire(headMesh, outlineLoop(72, 0.5, rp * 1.1, yGirdle - depth * 0.5), { radius: rp * 0.72, closed: true, sides: 16 });
+    wire(headMesh, outlineLoop(48, 0.72, rp * 0.6, bandTop + 0.25), { radius: rp * 0.85, closed: true, sides: 16 });
   }
   if (head.tulip) {
     // Petals: flat ribbons between the prongs, rising from the base and flaring out under the
@@ -155,53 +155,53 @@ export function buildRing(input = {}) {
   const accent = cut('round-accent');
   const accentCrown = accent.top;
   if (head.halo) {
-    // A ring of small stones round the centre stone, their tables level with its girdle.
-    const dh = clamp(0.16 * Math.min(W, L), 0.9, 1.6);
-    const offset = rp * 1.9 + dh * 0.5 + 0.06;
-    const yH = yGirdle - accentCrown * dh + 0.02;
-    const dense = outlineLoop(360, 0, offset, yH);
-    const { length } = evenly(dense, 360);
-    const count = Math.max(12, Math.round(length / (dh + 0.1)));
-    const { points } = evenly(dense, count);
-    placeLoopStones(points, dh, 7, stones.accent);
-    loop(headMesh, evenly(dense, 180).points, superellipse(0, -0.42 * dh, 0.5 * dh, 0.36 * dh, 3, 28));
-    loopBeads(headMesh, points, dh, yH + 0.1 * dh);
-    // Posts from the halo down to the basket, beside each prong.
-    for (const deg of prongDegs) {
-      wire(headMesh, curve([beside(deg + 14, 0, offset, yH - 0.5 * dh), beside(deg + 14, 0.35, rp * 1.3, yGirdle - depth * 0.42)], { steps: 5 }), { radius: rp * 0.55, sides: 8 });
-    }
+    // A ring of small stones tight round the centre stone, their tables level with its girdle.
+    // The centre's prongs rise through small gaps in the ring, as on a real halo.
+    const dh = clamp(0.15 * Math.min(W, L), 0.9, 1.5);
+    const offset = dh * 0.5 + 0.1;
+    const yH = yGirdle - accentCrown * dh + 0.03;
+    const path = outlineLoop(720, 0, offset, yH);
+    const placed = stonesBetween(path, prongDegs.map((d) => Math.round(((d % 360) + 360) % 360 * 2) % 720), dh, rp * 2 + 0.12, 0.08);
+    placeLoopStones(placed.points, dh, 6, stones.accent, path);
+    loop(headMesh, evenly(path, 240).points, superellipse(0.02 * dh, -0.44 * dh, 0.5 * dh, 0.36 * dh, 3, 28));
+    loopBeads(headMesh, placed.points, dh, yH + 0.1 * dh, placed.gapAfter, path);
   }
   if (head.hidden) {
     // Small stones tucked under the girdle, facing outwards: seen from the side.
     const dh = clamp(0.13 * Math.min(W, L), 0.8, 1.3);
     const y = yGirdle - 0.12 - dh * 0.42;
-    const dense = outlineLoop(360, 0.05, dh * 0.18, y);
-    const { length } = evenly(dense, 360);
-    const count = Math.max(10, Math.round(length / (dh + 0.08)));
-    const { points } = evenly(dense, count);
-    placeLoopStones(points, dh, 58, stones.accent);
+    const dense = outlineLoop(720, 0.05, dh * 0.18, y);
+    const { points } = stonesBetween(dense, prongDegs.map((d) => Math.round(((d % 360) + 360) % 360 * 2) % 720), dh, rp * 2 + 0.1, 0.07);
+    placeLoopStones(points, dh, 58, stones.accent, dense);
     loop(headMesh, evenly(dense, 180).points, superellipse(-0.32 * dh, -0.12 * dh, 0.38 * dh, 0.36 * dh, 2.6, 28));
     if (head.secret) {
       // A second row lower down, round the base of the basket.
       const d2 = dh * 0.85;
       const y2 = yGirdle - depth * 0.55 - d2 * 0.2;
-      const dense2 = outlineLoop(240, 0.55, rp * 1.4 + d2 * 0.18, y2);
-      const count2 = Math.max(8, Math.round(evenly(dense2, 240).length / (d2 + 0.08)));
-      const pts2 = evenly(dense2, count2).points;
-      placeLoopStones(pts2, d2, 64, stones.accent);
+      const dense2 = outlineLoop(720, 0.55, rp * 1.4 + d2 * 0.18, y2);
+      const pts2 = stonesBetween(dense2, prongDegs.map((d) => Math.round(((d % 360) + 360) % 360 * 2) % 720), d2, rp * 2 + 0.1, 0.07).points;
+      placeLoopStones(pts2, d2, 64, stones.accent, dense2);
       loop(headMesh, evenly(dense2, 160).points, superellipse(-0.22 * d2, -0.15 * d2, 0.4 * d2, 0.45 * d2, 2.6, 24));
     }
   }
 
-  const headReach = head.halo ? rp * 1.9 + clamp(0.16 * Math.min(W, L), 0.9, 1.6) * 1.1 : rp * 2.2;
+  const headReach = head.halo ? clamp(0.15 * Math.min(W, L), 0.9, 1.5) * 1.15 + 0.15 : rp * 2.2;
 
   // ── Shank ──
   const headHalf = Math.max(0.36 * W + rp * 1.6, head.halo ? 0.2 * W : 0) + 0.25;   // head's footprint on the band (along x)
   const phiHead = Math.asin(clamp(headHalf / (R + tTop), 0, 0.95));
+  const channel = shank.channel ? channelPlaces(R, shank, phiHead) : null;
   if (shank.strands) strandsShank(shankMesh, R, shank);
-  else plainShank(shankMesh, R, shank, { phiHead, liftTo: yGirdle - depth * 0.5 - (R + shank.t[1]) });
-  if (shank.pave) paveRows(shankMesh, R, shank, phiHead, stones.accent);
-  if (shank.channel) channelRow(shankMesh, R, shank, phiHead, stones.channel);
+  else plainShank(shankMesh, R, shank, { phiHead, channel });
+  let paveFrom = phiHead;
+  if (shank.cathedral) {
+    // Shoulders that leave the band and sweep up in an arch to the basket, leaving an open
+    // window between arch and band on each side.
+    const rail = { x: 0.27 * W + rp * 1.1, y: yGirdle - depth * 0.5 };
+    paveFrom = cathedralArms(shankMesh, R, shank, phiHead, rail, shank.pave ? stones.accent : null);
+  }
+  if (shank.pave) paveRows(shankMesh, R, shank, paveFrom, stones.accent);
+  if (channel) channelRow(channel, stones.channel);
 
   // ── Specs ──
   const gem = GEMS[o.gem], accentGem = GEMS[o.accentGem];
@@ -248,59 +248,100 @@ export function buildRing(input = {}) {
 const round = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
 const sumCarats = (list, key, density) => list.reduce((s, m) => s + caratsOf(key, Math.hypot(m[0], m[1], m[2]), density), 0);
 
-/** Small stones round a closed path, facing up and tilted outwards by `tilt` degrees. */
-function placeLoopStones(points, d, tilt, out) {
-  const n = points.length;
-  const mid = points.reduce((s, p) => vec.add(s, p), [0, 0, 0]).map((x) => x / n);
-  points.forEach((p, k) => {
-    const t = vec.unit(vec.sub(points[(k + 1) % n], points[(k - 1 + n) % n]));
-    let o = vec.unit([t[2], 0, -t[0]]);
-    if (vec.dot(o, vec.sub(p, mid)) < 0) o = vec.scale(o, -1);
+/**
+ * Positions for small stones along a closed path, leaving a gap (`clear` mm) at each of the
+ * given path indices (where prongs pass). Stones are `d` apart plus `gap`, centred in each run.
+ */
+function stonesBetween(path, gapIdx, d, clear, gap) {
+  const n = path.length;
+  const cum = [0];
+  for (let k = 1; k <= n; k++) cum.push(cum[k - 1] + vec.len(vec.sub(path[k % n], path[k - 1])));
+  const total = cum[n];
+  const at = (s) => {
+    s = ((s % total) + total) % total;
+    let k = 0;
+    while (cum[k + 1] < s) k++;
+    const f = (s - cum[k]) / (cum[k + 1] - cum[k]);
+    return vec.add(path[k], vec.scale(vec.sub(path[(k + 1) % n], path[k]), f));
+  };
+  const cuts = [...new Set(gapIdx)].map((i) => cum[i]).sort((a, b) => a - b);
+  const pitch = d + gap;
+  const points = [], gapAfter = [];
+  if (!cuts.length) {
+    const count = Math.max(8, Math.round(total / pitch));
+    for (let k = 0; k < count; k++) { points.push(at((k * total) / count)); gapAfter.push(false); }
+    return { points, gapAfter };
+  }
+  cuts.forEach((c, k) => {
+    const next = k + 1 < cuts.length ? cuts[k + 1] : cuts[0] + total;
+    const room = next - c - clear;
+    const count = Math.max(0, Math.floor((room + gap) / pitch));
+    const used = count * pitch - gap;
+    const start = c + clear / 2 + (room - used) / 2 + d / 2;
+    for (let i = 0; i < count; i++) { points.push(at(start + i * pitch)); gapAfter.push(i === count - 1); }
+  });
+  return { points, gapAfter };
+}
+
+/** Outward horizontal direction at a point, from the closed path it lies on. */
+function outwardAt(p, ref) {
+  let best = 0, bd = Infinity;
+  for (let k = 0; k < ref.length; k++) { const d = vec.len(vec.sub(ref[k], p)); if (d < bd) { bd = d; best = k; } }
+  const n = ref.length;
+  const t = vec.unit(vec.sub(ref[(best + 1) % n], ref[(best - 1 + n) % n]));
+  const mid = ref.reduce((s, q) => vec.add(s, q), [0, 0, 0]).map((x) => x / n);
+  let o = vec.unit([t[2], 0, -t[0]]);
+  if (vec.dot(o, vec.sub(p, mid)) < 0) o = vec.scale(o, -1);
+  return { o, t };
+}
+
+/** Small stones at points on a closed path (ref), facing up and tilted outwards by `tilt` degrees. */
+function placeLoopStones(points, d, tilt, out, ref = points) {
+  for (const p of points) {
+    const { o, t } = outwardAt(p, ref);
     const c = Math.cos(tilt * DEG), s = Math.sin(tilt * DEG);
     const y = vec.unit(vec.add(vec.scale([0, 1, 0], c), vec.scale(o, s)));
     const x = vec.unit(vec.cross(y, t));
     const z = vec.cross(x, y);
     out.push(matrix(x, y, z, d, p));
-  });
+  }
 }
 
-/** Beads between neighbouring stones of a loop, inside and outside. */
-function loopBeads(m, points, d, y) {
+/** Beads between neighbouring stones of a loop, on its outer and inner edges; none across a gap. */
+function loopBeads(m, points, d, y, gapAfter = [], ref = points) {
   const n = points.length;
-  const mid = points.reduce((s, p) => vec.add(s, p), [0, 0, 0]).map((x) => x / n);
   for (let k = 0; k < n; k++) {
     const a = points[k], b = points[(k + 1) % n];
-    const c = vec.scale(vec.add(a, b), 0.5);
-    const t = vec.unit(vec.sub(b, a));
-    let o = vec.unit([t[2], 0, -t[0]]);
-    if (vec.dot(o, vec.sub(c, mid)) < 0) o = vec.scale(o, -1);
-    for (const side of [-1, 1]) bead(m, vec.add([c[0], y, c[2]], vec.scale(o, side * (d * 0.48 + 0.02))), d * 0.17, 6);
+    const ends = gapAfter[k] ? [[a, 0.5], [b, -0.5]] : [[vec.scale(vec.add(a, b), 0.5), 0]];
+    for (const [c, along] of ends) {
+      const { o, t } = outwardAt(c, ref);
+      const at = vec.add([c[0], y, c[2]], vec.scale(t, along * (d * 0.55)));
+      bead(m, vec.add(at, vec.scale(o, d * 0.47 + 0.03)), d * 0.16, 6);
+      bead(m, vec.add(at, vec.scale(o, -(d * 0.47 + 0.01))), d * 0.12, 6);
+    }
   }
 }
 
 // ── Shanks ──
 
 /** Thickness, width and lift of a plain shank at angle φ from the top. */
-function shankShape(shank, phi, phiHead, liftTo) {
+function shankShape(shank, phi) {
   const top = (1 + Math.cos(phi)) / 2;    // 1 at the head, 0 at the bottom
   const w = shank.w[0] + (shank.w[1] - shank.w[0]) * top;
-  let t = shank.t[0] + (shank.t[1] - shank.t[0]) * top;
+  const t = shank.t[0] + (shank.t[1] - shank.t[0]) * top;
   const a = Math.abs(Math.atan2(Math.sin(phi), Math.cos(phi)));
-  if (shank.cathedral) {
-    // Shoulders that rise in an arch to hold the head, fading out over 50° of the band.
-    const rise = 1 - smooth(phiHead * 0.7, phiHead + 50 * DEG, a);
-    t += Math.max(liftTo, 0) * rise * rise * 0.92;
-  }
   return { w, t, a };
 }
 
-function plainShank(m, R, shank, { phiHead, liftTo }) {
-  const count = 48;
+function plainShank(m, R, shank, { phiHead, channel }) {
+  const count = channel ? 112 : 48;
   const outerPow = shank.knife ? 2 : 2.4, innerPow = 5;
   const pave = shank.pave;
   const pitch = pave ? pave.d + 0.1 : 1;
   const profile = (phi) => {
-    const { w, t, a } = shankShape(shank, phi, phiHead, liftTo);
+    const { w, t, a } = shankShape(shank, phi);
+    // Channel: a groove along the top where the stones sit, its walls the rails that hold them.
+    const groove = channel ? channel.depthAt(a) : 0;
     const pts = [];
     if (shank.round) {
       for (let k = 0; k < count; k++) {
@@ -317,6 +358,7 @@ function plainShank(m, R, shank, { phiHead, liftTo }) {
       const v = (w / 2) * Math.sign(s) * Math.abs(s) ** (2 / p);
       if (shank.knife && c > 0) u = t * 0.5 + t * 0.5 * (1 - Math.abs(v) / (w / 2)) * Math.min(1, c * 3);
       if (c < 0) u -= 0.12 * t * (1 - (2 * v / w) ** 2) * Math.abs(c);   // comfort fit inside
+      if (groove > 0 && c > 0 && Math.abs(v) < channel.half) u = Math.min(u, t - groove);
       if (shank.flutes && c > 0 && a > phiHead * 1.4) {
         const fl = 0.5 + 0.5 * Math.cos(phi * shank.flutes);
         u -= 0.22 * fl * c ** 2 * smooth(phiHead * 1.4, phiHead * 1.4 + 0.15, a);
@@ -332,7 +374,7 @@ function plainShank(m, R, shank, { phiHead, liftTo }) {
     }
     return pts;
   };
-  const segments = shank.flutes ? 576 : shank.notch ? 512 : 256;
+  const segments = shank.flutes ? 576 : shank.notch || channel ? 512 : 256;
   band(m, { r: R, segments, profile });
 }
 
@@ -368,84 +410,136 @@ function surfaceAt(shank, w, t, v) {
 }
 
 /** Rows of small stones set into the top of the shank, with beads holding them. */
-function paveRows(m, R, shank, phiHead, out) {
+function paveRows(m, R, shank, phiFrom, out) {
   const { rows, d } = shank.pave;
   const gap = shank.pave.count ? 0.22 : 0.1;
   const pitch = d + gap;
-  const top = shankShape(shank, 0, phiHead, 0);
+  const top = shankShape(shank, 0);
   const spacing = d + 0.14;
   const offsets = rows === 1 ? [0] : rows === 2 ? [-spacing / 2, spacing / 2] : [-spacing, 0, spacing];
-  const start = phiHead + (pitch * 0.55) / (R + top.t);
+  const start = phiFrom + (pitch * 0.55) / (R + top.t);
+  const end = (shank.pave.end ?? 180) * DEG;
+  // Beads (shared prongs) sit over the stones' edges between neighbours; rows side by side
+  // share the beads between them.
+  const beadV = [];
+  for (const v of offsets) for (const e of [v - (d / 2 - 0.01), v + (d / 2 - 0.01)]) {
+    const near = beadV.findIndex((b) => Math.abs(b - e) < d * 0.3);
+    if (near >= 0) beadV[near] = (beadV[near] + e) / 2; else beadV.push(e);
+  }
+  const beadR = d * (shank.pave.count ? 0.17 : 0.15);
   for (const side of [1, -1]) {
+    const phis = [];
+    let phi = start;
+    while (shank.pave.count ? phis.length < shank.pave.count : phi < end) {
+      phis.push(phi);
+      phi += pitch / (R + shankShape(shank, phi).t);
+    }
     for (const v of offsets) {
-      let phi = start;
-      let placed = 0;
-      const end = (shank.pave.end ?? 180) * DEG;
-      const beadsAt = [];
-      while ((shank.pave.count ? placed < shank.pave.count : phi < end)) {
-        const { w, t } = shankShape(shank, phi, phiHead, 0);
-        const surf = surfaceAt(shank, w, t, v * (w / top.w));
-        const radial = [Math.sin(side * phi), Math.cos(side * phi), 0];
-        const along = [Math.cos(side * phi) * side, -Math.sin(side * phi) * side, 0];
+      for (const p of phis) {
+        const { w, t } = shankShape(shank, p);
+        const vv = v * (w / top.w);
+        const surf = surfaceAt(shank, w, t, vv);
+        const radial = [Math.sin(side * p), Math.cos(side * p), 0];
         const tilt = rows === 1 ? 0 : surf.tilt;
         const y = vec.unit(vec.add(vec.scale(radial, Math.cos(tilt)), [0, 0, Math.sin(tilt)]));
         const x = vec.unit(vec.cross(y, [0, 0, 1]));
         const z = vec.cross(x, y);
-        const centreAt = vec.add(vec.scale(radial, R + surf.u - d * 0.03), [0, 0, v * (w / top.w)]);
-        out.push(matrix(x, y, z, d, centreAt));
-        beadsAt.push({ phi, w, t });
-        placed++;
-        phi += pitch / (R + t);
+        out.push(matrix(x, y, z, d, vec.add(vec.scale(radial, R + surf.u - d * 0.03), [0, 0, vv])));
       }
-      // Beads: between neighbours and at the ends of the row, on both edges of the row.
-      const beadR = d * (shank.pave.count ? 0.2 : 0.17);
-      const edges = rows === 3 && v === 0 ? [] : [v - (d / 2 + 0.03) * (v <= 0 ? 1 : -1)].concat(rows === 1 ? [v + d / 2 + 0.03] : []);
-      for (let k = 0; k <= beadsAt.length; k++) {
-        const a = beadsAt[Math.max(k - 1, 0)], b = beadsAt[Math.min(k, beadsAt.length - 1)];
-        const phiB = k === 0 ? a.phi - pitch / 2 / (R + a.t) : k === beadsAt.length ? b.phi + pitch / 2 / (R + b.t) : (a.phi + b.phi) / 2;
-        const { w, t } = shankShape(shank, phiB, phiHead, 0);
-        const radial = [Math.sin(side * phiB), Math.cos(side * phiB), 0];
-        const list = rows === 1 ? [v - d / 2 - 0.02, v + d / 2 + 0.02] : [v + Math.sign(v || 1) * (d / 2 + 0.03)].concat(rows === 3 ? [v - Math.sign(v || 1) * (d / 2 + 0.03)] : []);
-        for (const e of (rows === 3 && v === 0 ? [] : list)) {
-          const vv = e * (w / top.w);
-          const surf = surfaceAt(shank, w, t, Math.max(Math.min(vv, w / 2 * 0.95), -w / 2 * 0.95));
-          bead(m, vec.add(vec.scale(radial, R + surf.u + beadR * 0.15), [0, 0, vv]), beadR, 6);
-        }
+    }
+    for (let k = 0; k <= phis.length; k++) {
+      const p = k === 0 ? phis[0] - (pitch / 2) / (R + top.t) : k === phis.length ? phis[k - 1] + (pitch / 2) / (R + top.t) : (phis[k - 1] + phis[k]) / 2;
+      const { w, t } = shankShape(shank, p);
+      const radial = [Math.sin(side * p), Math.cos(side * p), 0];
+      for (const e of beadV) {
+        const vv = Math.max(Math.min(e * (w / top.w), w / 2 - beadR), -(w / 2 - beadR));
+        const surf = surfaceAt(shank, w, t, vv);
+        bead(m, vec.add(vec.scale(radial, R + surf.u + beadR * 0.3), [0, 0, vv]), beadR, 6);
       }
-      void edges;
     }
   }
 }
 
-/** Square stones side by side between two metal rails. */
-function channelRow(m, R, shank, phiHead, out) {
+/**
+ * Where a channel's square stones go, and the groove that holds them: a slot along the top of
+ * the shank, as wide as the stones, deep enough that their tables sit just below the band's top.
+ */
+function channelPlaces(R, shank, phiHead) {
   const { d, end } = shank.channel;
-  const top = shankShape(shank, 0, phiHead, 0);
+  const top = shankShape(shank, 0);
   const pitch = d + 0.03;
+  const crown = cut('princess-accent').top * d;
+  const phis = [];
+  let phi = phiHead + (pitch * 0.6) / (R + top.t);
+  while (phi < end * DEG) { phis.push(phi); phi += pitch / (R + shankShape(shank, phi).t); }
+  const reach = (d / 2 + 0.06) / (R + top.t);
+  const a0 = phis[0] - reach, a1 = phis[phis.length - 1] + reach;
+  const depth = crown + 0.1;
+  return {
+    R, shank, d, phis, crown,
+    half: d / 2 + 0.02,
+    // Full depth along the stones, with steep end walls.
+    depthAt: (a) => depth * smooth(a0 - 0.006, a0 + 0.006, a) * (1 - smooth(a1 - 0.006, a1 + 0.006, a)),
+  };
+}
+
+/** Square stones side by side in the channel, tables just below the rails' tops. */
+function channelRow({ R, shank, d, phis, crown }, out) {
   for (const side of [1, -1]) {
-    let phi = phiHead + (pitch * 0.6) / (R + top.t);
-    const first = phi;
-    while (phi < end * DEG) {
-      const { t } = shankShape(shank, phi, phiHead, 0);
+    for (const phi of phis) {
+      const { t } = shankShape(shank, phi);
       const radial = [Math.sin(side * phi), Math.cos(side * phi), 0];
-      const y = radial;
-      const x = vec.unit(vec.cross(y, [0, 0, 1]));
-      out.push(matrix(x, y, [0, 0, 1], d, vec.scale(radial, R + t - 0.02)));
-      phi += pitch / (R + t);
-    }
-    // Rails either side of the stones, a little higher than their girdles.
-    for (const v of [-1, 1]) {
-      const path = [];
-      const steps = 80;
-      for (let i = 0; i <= steps; i++) {
-        const p = first - (pitch * 0.55) / (R + top.t) + ((phi - first) * i) / steps;
-        const { t } = shankShape(shank, p, phiHead, 0);
-        const radial = [Math.sin(side * p), Math.cos(side * p), 0];
-        path.push(vec.add(vec.scale(radial, R + t + 0.04), [0, 0, v * (d / 2 + 0.2)]));
-      }
-      wire(m, path, { radius: 0.26, sides: 10, section: [0.85, 1.25], up: null });
+      const x = vec.unit(vec.cross(radial, [0, 0, 1]));
+      out.push(matrix(x, radial, [0, 0, 1], d, vec.scale(radial, R + t - 0.05 - crown)));
     }
   }
+}
+
+/**
+ * Cathedral shoulders: on each side an arm leaves the band and rises in an arch to the basket
+ * rail beside the stone. Returns the band angle beyond which pavé on the band can start.
+ */
+function cathedralArms(m, R, shank, phiHead, rail, paveOut) {
+  const phiStart = phiHead + 44 * DEG;
+  const base = shankShape(shank, phiStart);
+  const r0 = R + base.t / 2;
+  const phiEnd = Math.atan2(rail.x, rail.y), r1 = Math.hypot(rail.x, rail.y);
+  const ratio = (base.t * 0.92) / base.w;
+  const N = 64;
+  for (const side of [1, -1]) {
+    const path = [];
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;
+      const phi = phiStart + (phiEnd - phiStart) * u;
+      // Rises slowly from the band, then steeply up to the head: an arch.
+      const r = r0 + (r1 - r0) * u ** 1.75;
+      path.push([side * r * Math.sin(phi), r * Math.cos(phi), 0]);
+    }
+    const halfWidth = (u) => (base.w / 2) * (1 - 0.22 * u);
+    wire(m, path, { radius: halfWidth, sides: 24, section: [ratio, 1], up: [0, 0, 1] });
+    if (paveOut) {
+      // Pavé along the top of the arch.
+      const d = shank.pave.d;
+      const cum = [0];
+      for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + vec.len(vec.sub(path[i], path[i - 1])));
+      const total = cum[cum.length - 1];
+      for (let s = total * 0.12 + d / 2; s < total * 0.86; s += d + 0.1) {
+        let k = 0;
+        while (cum[k + 1] < s) k++;
+        const f = (s - cum[k]) / (cum[k + 1] - cum[k]);
+        const P = vec.add(path[k], vec.scale(vec.sub(path[k + 1], path[k]), f));
+        const T = vec.unit(vec.sub(path[k + 1], path[k]));
+        let n = vec.unit([-T[1], T[0], 0]);
+        if (vec.dot(n, P) < 0) n = vec.scale(n, -1);
+        const u = s / total;
+        const surface = vec.add(P, vec.scale(n, halfWidth(u) * ratio));
+        const x = T, y = n, z = vec.cross(x, y);
+        paveOut.push(matrix(x, y, z, d, vec.sub(surface, vec.scale(n, d * 0.03))));
+        for (const e of [-1, 1]) bead(m, vec.add(vec.add(surface, vec.scale(T, (d + 0.1) / 2)), [0, 0, e * (d / 2 + 0.02)]), d * 0.15, 6);
+      }
+    }
+  }
+  return phiStart + 0.02;
 }
 
 export { HEADS as RING_HEADS, SHANKS as RING_SHANKS, METALS };

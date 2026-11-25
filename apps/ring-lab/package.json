@@ -3,11 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Prototype: 3D ring configurator built from Rhino/MatrixGold files, with ray-traced stones, photo mode, an automatic fit check and a catalogue renderer.",
+  "description": "3D ring lab: a parametric ring and wedding band builder with ray-traced stones, a configurator built from Rhino/MatrixGold files with an automatic fit check, and a render studio.",
   "scripts": {
     "convert": "node src/convert.mjs",
     "fit-check": "node src/fitCheck.mjs",
-    "catalogue": "node src/renderCatalogue.mjs"
+    "catalogue": "node src/renderCatalogue.mjs",
+    "test:e2e": "node test/configurator.e2e.mjs"
   },
   "dependencies": {
     "meshoptimizer": "1.3.0",

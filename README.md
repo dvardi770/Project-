@@ -44,7 +44,10 @@ diamond feeds (Nivoda, RapNet) through an embeddable ring builder.
 │   │   │   ├── fulfillment.ts      # order list, release to the foundry
 │   │   │   └── session.ts          # signed session cookie
 │   │   └── test/                   # database-backed tests + browser test
-│   ├── ring-lab/               # prototype: 3D configurator from .3dm CAD files (see its README)
+│   ├── ring-lab/               # 3D: ring and band builders, CAD configurator, render studio (see its README)
+│   │   ├── configurator/ring-builder.html  # engagement ring builder: shape, carat, gem, head, shank, metals
+│   │   ├── configurator/band-builder.html  # wedding band pair builder: profile, width, metals, diamonds, engraving
+│   │   ├── configurator/engine/            # parametric cuts, heads, shanks and bands; 60 fps stage; prices
 │   │   ├── src/convert.mjs         # .3dm -> compressed head/shank meshes, baked occlusion, stone facets
 │   │   ├── src/meshData.mjs        # compact mesh format (quantised, meshopt-compressed)
 │   │   ├── src/fitCheck.mjs        # which heads fit which shanks
@@ -256,6 +259,24 @@ properties: `--jc-accent`, `--jc-on-accent`, `--jc-highlight` (selected items an
 
 Where a setting or diamond has no photo, the widget draws one: the diamond's cut, and the ring in the
 chosen metal with the chosen stone set in it. Real photos always take precedence.
+
+### Ring builder and band builder
+
+`apps/ring-lab/configurator` has two live 3D builders that make every part from measurements, so any
+choice fits any other without CAD files (see the ring lab's README):
+
+- **Ring builder** (`ring-builder.html`): 7 centre-stone shapes, carat 0.5–3, 9 gems, 8 heads (prong,
+  halo, hidden and secret halos, bezels, tulip), 16 shanks (pavé, cathedral, twist, braided, channel…),
+  separate head and shank metals, accent stones and ring size. It shows total carats and grams of metal
+  and prices them with a breakdown.
+- **Band builder** (`band-builder.html`): her and his rings, designed together or separately, in four
+  steps: profile, width, thickness, shape and size; metals (two-tone layouts) and finishes (polished,
+  satin, matte, hammered); diamonds; engraving inside, shown in 3D.
+
+Both keep the design in the link (share), work embedded (`?embed`), and hand the design, specs and price
+to the store page with a `ring-builder:add-to-cart` / `band-builder:add-to-cart` event (and
+`postMessage` when framed). Prices come from a price list in `engine/pricing.mjs`; they are not yet
+priced or checked by the API, and the cart hand-off is not yet wired to the storefront connectors.
 
 ### Rendered photos, 360° video and 3D
 

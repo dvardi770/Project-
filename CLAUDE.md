@@ -19,6 +19,11 @@ for the layout, purchase flow and store setup.
 - `packages/shared` — `storefront.ts` is the API response contract used by the widget; the API proves
   its DTOs match it in `apps/api/src/contract.ts`. `cache.ts` is the cache shared by API and worker.
 - `integrations/wordpress/jewelry-builder` — the WooCommerce plugin (PHP, WordPress coding style, tabs).
+- `apps/ring-lab/configurator` — ring and band builders made from measurements (no CAD): `engine/cuts.mjs`
+  (facet-plane gem cuts; the stone shader traces the same planes), `ring.mjs` / `band.mjs` (geometry,
+  carats, grams), `pricing.mjs`, `stage.mjs` (three.js stage). Engine modules other than `stage.mjs` are
+  plain math with no three.js, tested in `test/configurator.test.ts`; `pnpm --filter @jewelry/ring-lab
+  test:e2e` drives both pages in Chromium.
 - `apps/ring-lab` — 3D configurator and render studio (plain ESM JavaScript, not typechecked): `.3dm`
   converter, compact mesh format, head/shank fit check, three.js viewer (photo mode, embed mode,
   `window.ringViewer` API), `renderMedia.mjs` (four angles + 360° MP4 per metal/shape/colour, needs
@@ -44,6 +49,7 @@ pnpm dev:api
 php integrations/wordpress/tests/run.php     # plugin smoke test (stand-ins for WordPress, no WP needed)
 TEST_DATABASE_URL=... pnpm --filter @jewelry/dashboard test:e2e   # builds the dashboard, drives it in Chromium
 pnpm --filter @jewelry/widget test:e2e       # builds the widget and drives it in Chromium (needs Playwright's browser)
+pnpm --filter @jewelry/ring-lab test:e2e     # ring and band builders in Chromium
 ```
 
 New migrations: `prisma migrate dev` needs an interactive terminal; in a non-interactive session

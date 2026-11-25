@@ -1,4 +1,57 @@
-# Ring lab: 3D configurator and render studio
+# Ring lab: ring and band builders, CAD configurator and render studio
+
+## Ring builder and band builder (`configurator/`)
+
+Two live 3D builders in which every part is made from measurements, so any combination fits and
+nothing needs a CAD file per variant: an **engagement ring builder** and a **wedding band builder**
+for a pair of rings.
+
+- **Gem cuts** (`engine/cuts.mjs`) are made the way a cutter specifies them: each facet is a plane
+  (its direction round the stone and its slope), and the stone is the space inside all of them. Round,
+  oval, cushion and pear brilliants with excellent proportions (table 56%, crown 34.5°, pavilion
+  40.75°, 8 bezel, 8 star, 16 upper-half, 8 main and 16 lower-half facets, faceted girdle), an
+  emerald step cut, princess and marquise. Sizes come from carats: a 1 ct round is 6.4 mm, a 1 ct
+  oval 7.7 × 5.6 mm, as real stones are (weights use each gem's density). Accent stones use a
+  simpler cut with 33 facets, since they are a few pixels across.
+- **Ring parts** (`engine/ring.mjs`, `engine/geometry.mjs`): heads are prongs swept along curves
+  round the stone's outline, with basket rails, halos of small stones on beads, hidden and secret
+  halos, bezels and tulip petals. Shanks are cross-sections swept round the finger (tapering,
+  comfort fit, cathedral shoulders, flutes, French and U-pavé scallops), twisted or braided wires,
+  and rows of pavé, channel or eight-stone settings. Every combination builds in 10–40 ms. Metal
+  weight comes from the closed meshes' volume (a typical ring: 2.5–3.5 g), carats from each stone.
+- **Bands** (`engine/band.mjs`): eight profiles, width 2–10 mm, thickness matched to width or set,
+  seven outer shapes (oval, cushion, hexagon, octagon, wave, wavy…), one or two metals (halves,
+  centre stripe, edges, inside), a finish per metal, grooves, diamonds (flush solitaire or three,
+  channel or pavé line, half or all round) and engraving inside. Weights use the cross-section's
+  area (Pappus): a 4 mm 14k band is about 5 g.
+- **Stage** (`engine/stage.mjs`), built for 60 frames per second on phones:
+  - Stones are traced through their own facet planes in the shader, with Fresnel reflection at each
+    facet and up to 7 bounces. While the ring turns, fire is added where light leaves the stone (one
+    trace instead of three); when it stops, the picture is refined over 14 steps, each tracing red,
+    green and blue separately at slightly varied refractive indices, with sub-pixel offsets.
+  - Metal: physically based, in a studio of softboxes rendered once into an environment map;
+    polished, satin (anisotropic), matte and hammered finishes at real scale.
+  - A contact shadow baked once per design; glow round the brightest sparkles; Khronos PBR Neutral
+    tone mapping (made for product colours); 4× multisampling.
+  - The resolution adapts to keep frames near 16 ms, rendering stops when nothing changes or the
+    stage is off screen, and shaders for every cut are compiled in the background.
+  - Views move smoothly to what a choice changes (head, top, side, the inside for engraving).
+    Engraving is drawn into relief, colour and roughness maps on the band's inside.
+- **Pages**: `ring-builder.html` and `band-builder.html`, mobile first (stage on top, choices
+  below, price bar at the bottom), with live thumbnails of heads and shanks, a price breakdown,
+  total carats and grams, share links, `?embed`, `?stats` (frames per second), and add-to-cart events
+  for the store page. `engine/pricing.mjs` holds the sample price list.
+
+Serve the folder with any static server (`npx serve configurator`) and open either page. Test:
+`pnpm test` (cuts, rings, bands, prices) and `pnpm --filter @jewelry/ring-lab test:e2e` (both pages
+in Chromium).
+
+Not done in the builders yet: try-on on the shopper's hand (camera and hand tracking); server-side
+pricing and the cart hand-off into Shopify/WooCommerce (the pages emit the design, specs and price);
+a real stone from the diamond feed as the centre stone; frame rates measured on phones (built and
+tested here only in software rendering, which has no GPU).
+
+## CAD configurator and render studio
 
 Built straight from the jeweller's CAD files: a live 3D viewer, an automatic fit check for
 mixing heads and shanks, and a render studio that makes product photos from four angles and a

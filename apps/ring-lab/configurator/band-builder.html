@@ -1,0 +1,471 @@
+<title>Band Builder</title>
+<meta name="description" content="Design a pair of wedding bands in live 3D: profile, width, shape, metals, finishes, diamonds and engraving.">
+<style>
+  :root {
+    --bg: #ffffff; --ink: #1d1c1a; --muted: #6f6a64; --faint: #a39d96; --line: #e9e5df; --chip: #f6f4f1;
+    --accent: #a9874f; --accent-soft: #f5efe5; --stage: #ffffff; --focus: #1d1c1a; --card: #faf7f2;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151514; --ink: #f1eee9; --muted: #b3ada5; --faint: #8a847c; --line: #2c2a27; --chip: #201f1d;
+      --accent: #d4b07a; --accent-soft: #2a241b; --stage: #1b1b1a; --focus: #f1eee9; --card: #1d1c1a; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151514; --ink: #f1eee9; --muted: #b3ada5; --faint: #8a847c; --line: #2c2a27; --chip: #201f1d;
+    --accent: #d4b07a; --accent-soft: #2a241b; --stage: #1b1b1a; --focus: #f1eee9; --card: #1d1c1a; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  .app > * { min-width: 0; }
+  .app { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto 1fr auto auto; }
+  .bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 7; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .brand small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; letter-spacing: .04em; }
+  .round-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); display: grid; place-items: center; cursor: pointer; }
+  .stage-wrap { position: sticky; top: 61px; z-index: 5; background: var(--stage); height: min(44vh, 440px); }
+  #stage { position: absolute; inset: 0; }
+  .tools { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .tool { width: 36px; height: 36px; border-radius: 50%; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--ink); }
+  .tool:hover { background: var(--chip); }
+  .zoom { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 110px; accent-color: var(--accent); }
+  .settings { position: absolute; right: 56px; top: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.08); font-size: 13px; width: 220px; }
+  .settings[hidden] { display: none; }
+  .settings h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .settings .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); background: var(--stage); transition: opacity .4s; }
+  .loading[hidden] { display: grid; opacity: 0; pointer-events: none; }
+  .tabs { position: sticky; top: calc(61px + min(44vh, 440px)); z-index: 5; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--bg); }
+  .tab { border: 0; background: none; padding: 14px 8px 12px; letter-spacing: .14em; font-size: 13px; text-transform: uppercase; color: var(--faint); cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .link { width: 54px; height: 34px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); display: grid; place-items: center; cursor: pointer; color: var(--muted); }
+  .link[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .panel { padding: 14px 16px 22px; }
+  .card { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 0 0 12px; }
+  .card h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; display: flex; justify-content: space-between; }
+  .card h2 small { letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--muted); font-size: 13px; }
+  .preview { background: var(--card); border-radius: 12px; display: grid; place-items: center; padding: 14px; margin-bottom: 12px; color: var(--muted); font-size: 12.5px; gap: 6px; }
+  .preview svg { width: 120px; height: 64px; }
+  .choices { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+  .choice { flex: 0 0 auto; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; min-width: 74px; color: var(--muted); font-size: 12px; }
+  .choice svg { width: 56px; height: 30px; }
+  .choice[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer; color: var(--muted); }
+  .pill[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+  .swatches { display: flex; gap: 14px; flex-wrap: wrap; }
+  .swatch { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; font-size: 11.5px; color: var(--muted); }
+  .swatch i { width: 34px; height: 34px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); outline: 2px solid transparent; outline-offset: 3px; }
+  .swatch[aria-checked="true"] i { outline-color: var(--accent); }
+  .swatch[aria-checked="true"] { color: var(--ink); font-weight: 600; }
+  .slider { margin-top: 4px; }
+  .slider .badge { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; font-size: 13px; margin: 0 auto 6px; }
+  .slider .ends { display: flex; justify-content: space-between; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .toggle { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .toggle input { width: 40px; height: 22px; accent-color: var(--accent); }
+  select, input[type="text"] { width: 100%; height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 12px; }
+  .note { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+  .buy { position: sticky; bottom: 58px; z-index: 6; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px; }
+  .pair { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .pair small { display: block; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  .pair strong { font: 400 24px/1.1 Georgia, "Times New Roman", serif; }
+  .pair span { color: var(--muted); font-size: 12.5px; margin-left: 6px; }
+  .textlink { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; font-size: 12.5px; cursor: pointer; }
+  .primary { width: 100%; border: 0; background: var(--ink); color: var(--bg); height: 46px; border-radius: 999px; letter-spacing: .12em; font-size: 12.5px; text-transform: uppercase; cursor: pointer; }
+  .breakdown { font-size: 12.5px; margin: 0 0 8px; border-top: 1px dashed var(--line); padding-top: 6px; }
+  .breakdown div { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; }
+  .breakdown div span:first-child { color: var(--muted); }
+  .breakdown b { display: block; margin-top: 4px; font-weight: 600; }
+  .steps { position: sticky; bottom: 0; z-index: 7; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bg); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .step { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--faint); cursor: pointer; padding: 2px; }
+  .step i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 11px; background: var(--chip); color: var(--muted); }
+  .step[aria-current="step"] { color: var(--ink); font-weight: 600; }
+  .step[aria-current="step"] i { background: var(--accent); color: #fff; }
+  .toast { position: fixed; left: 50%; bottom: 140px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 9; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .stats { position: absolute; left: 12px; top: 12px; font: 11px/1.3 ui-monospace, monospace; background: rgba(0,0,0,.62); color: #fff; padding: 4px 7px; border-radius: 4px; pointer-events: none; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .embed .bar { display: none; }
+  .embed .stage-wrap { top: 0; }
+  .embed .tabs { top: min(44vh, 440px); }
+  @media (min-width: 960px) {
+    .app { grid-template-columns: minmax(0, 1fr) 460px; grid-template-rows: auto auto 1fr auto auto; }
+    .bar { grid-column: 1 / -1; }
+    .stage-wrap { grid-column: 1; grid-row: 2 / 6; height: calc(100vh - 61px); border-right: 1px solid var(--line); }
+    .embed .stage-wrap { height: 100vh; }
+    .tabs { grid-column: 2; grid-row: 2; top: 61px; }
+    .embed .tabs { top: 0; }
+    .panel { grid-column: 2; grid-row: 3; }
+    .buy { grid-column: 2; grid-row: 4; }
+    .steps { grid-column: 2; grid-row: 5; }
+  }
+  @media (prefers-reduced-motion: reduce) { .loading, .toast { transition: none; } }
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <svg width="34" height="24" viewBox="0 0 48 32" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="17" cy="16" r="11"/><circle cx="31" cy="16" r="11"/></svg>
+      <div>Band Builder<small>Wedding bands, made for two</small></div>
+    </div>
+    <button class="round-btn" id="share" type="button" aria-label="Share this design">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>
+    </button>
+  </header>
+
+  <section class="stage-wrap" aria-label="Your bands in 3D">
+    <div id="stage"></div>
+    <div class="tools">
+      <button class="tool" id="gear" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      <button class="tool" id="reset" type="button" aria-label="Reset view">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></svg>
+      </button>
+      <input class="zoom" id="zoom" type="range" min="0" max="100" value="50" aria-label="Zoom">
+    </div>
+    <div class="settings" id="settings" hidden>
+      <h3>Show</h3>
+      <div class="row" role="radiogroup" aria-label="Rings shown" id="show"></div>
+      <h3>Background</h3>
+      <div class="row" role="radiogroup" aria-label="Background" id="backgrounds"></div>
+      <label class="toggle"><input type="checkbox" id="spin" checked> Turn automatically</label>
+    </div>
+    <div class="loading" id="loading">Preparing your bands…</div>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Which ring">
+    <button class="tab" role="tab" id="tab-her" aria-selected="true" data-ring="her">Her ring</button>
+    <button class="link" id="link" type="button" aria-pressed="true" title="Design both rings together" aria-label="Design both rings together">
+      <svg width="24" height="16" viewBox="0 0 48 32" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="17" cy="16" r="10"/><circle cx="31" cy="16" r="10"/></svg>
+    </button>
+    <button class="tab" role="tab" id="tab-his" aria-selected="false" data-ring="his">His ring</button>
+  </nav>
+
+  <main class="panel" id="panel" role="tabpanel" aria-live="polite"></main>
+
+  <footer class="buy">
+    <div class="pair">
+      <div><small>Your pair</small><strong id="total">—</strong><span id="each"></span></div>
+      <button class="textlink" id="toggle-breakdown" type="button" aria-expanded="false" aria-controls="breakdown">Price breakdown</button>
+    </div>
+    <div class="breakdown" id="breakdown" hidden></div>
+    <button class="primary" id="next" type="button">Continue</button>
+  </footer>
+  <nav class="steps" aria-label="Steps" id="steps"></nav>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import { Stage, engravingMaps, ENGRAVING_FONTS } from './engine/stage.mjs';
+import { buildBand, pairLayout, profilePoints, autoThickness, widthName, PROFILES, BAND_SHAPES, LAYOUTS, GROOVES, SETTINGS, EU_SIZES, DEFAULT_BAND } from './engine/band.mjs';
+import { METALS, FINISHES, diameterToUs, euToDiameter } from './engine/materials.mjs';
+import { priceBand, money } from './engine/pricing.mjs';
+
+const params = new URLSearchParams(location.search);
+if (params.has('embed')) document.documentElement.classList.add('embed');
+
+// Choices for each ring. Linked rings share everything except size, width, diamonds and engraving.
+const PERSONAL = new Set(['size', 'width', 'thickness', 'autoThickness', 'setting', 'stoneSize', 'stonePosition', 'engraving', 'font']);
+const state = {
+  active: 'her', linked: true, step: 1, show: 'both', background: 'white',
+  her: { ...DEFAULT_BAND, width: 3.5, size: 52, layout: 'split', metal: 'yellow', metal2: 'white', finish: 'polished', finish2: 'satin', setting: 'pave-half', stoneSize: 1.1, stonePosition: -0.45 },
+  his: { ...DEFAULT_BAND, width: 5.5, size: 60, layout: 'split', metal: 'yellow', metal2: 'white', finish: 'polished', finish2: 'satin', setting: 'none' },
+};
+// A shared link restores a design: #her=<json>&his=<json>.
+try {
+  const h = new URLSearchParams(location.hash.slice(1));
+  for (const r of ['her', 'his']) if (h.get(r)) Object.assign(state[r], JSON.parse(h.get(r)));
+} catch { /* an old or edited link: keep the defaults */ }
+
+const STEPS = [
+  { n: 1, label: 'Shape & Size', render: stepShape },
+  { n: 2, label: 'Metals & Design', render: stepMetals },
+  { n: 3, label: 'Diamonds', render: stepDiamonds },
+  { n: 4, label: 'Engraving', render: stepEngraving },
+];
+const BACKGROUNDS = { white: { label: 'White', css: '#ffffff' }, ivory: { label: 'Ivory', css: '#f4efe7' }, grey: { label: 'Grey', css: '#e7e7e6' } };
+
+const ring = () => state[state.active];
+function set(key, value) {
+  ring()[key] = value;
+  if (key === 'width' && ring().autoThickness) ring().thickness = autoThickness(value);
+  if (state.linked && !PERSONAL.has(key)) state[state.active === 'her' ? 'his' : 'her'][key] = value;
+  update();
+}
+
+// ─── Building ──
+let designs = null, prices = null;
+function update({ rebuild = true } = {}) {
+  if (rebuild) {
+    designs = { her: buildBand(state.her), his: buildBand(state.his) };
+    prices = { her: priceBand(designs.her.specs), his: priceBand(designs.his.specs) };
+    const layout = pairLayout(designs.her, designs.his);
+    const which = state.show === 'both' ? ['her', 'his'] : [state.active];
+    stage.setDesign({
+      groups: which.map((r) => ({
+        matrix: state.show === 'both' ? layout[r] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, designs[r].frame.radius, 0, 1],
+        parts: designs[r].parts.map((p) => ({ ...p, maps: p.inner && state[r].engraving.trim() ? engravingMaps({ text: state[r].engraving.trim(), font: state[r].font, width: designs[r].specs.width, circumference: Math.PI * euToDiameter(state[r].size) }) : null })),
+        stones: designs[r].stones,
+      })),
+      frame: { floor: 0, shadowReach: 0.4 },
+    });
+    groupOf = Object.fromEntries(which.map((r, i) => [r, i]));
+  }
+  renderPanel();
+  renderPrice();
+  history.replaceState(null, '', `${location.pathname}${location.search}#${new URLSearchParams({ her: JSON.stringify(state.her), his: JSON.stringify(state.his) })}`);
+}
+let groupOf = {};
+
+// ─── Controls ──
+const panel = document.getElementById('panel');
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'on') for (const [ev, fn] of Object.entries(v)) e.addEventListener(ev, fn);
+    else if (k === 'html') e.innerHTML = v;
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
+  }
+  e.append(...kids.filter((k) => k != null));
+  return e;
+};
+function card(title, value, ...body) {
+  const id = `c-${Math.random().toString(36).slice(2, 8)}`;
+  return el('section', { class: 'card' }, el('h2', { id }, title, value ? el('small', {}, value) : null), ...body.map((b) => { if (b?.setAttribute && b.getAttribute('role') === 'radiogroup') b.setAttribute('aria-labelledby', id); return b; }));
+}
+function radios(className, items, current, onPick, makeItem) {
+  const group = el('div', { class: className, role: 'radiogroup' });
+  for (const [value, item] of items) {
+    const b = makeItem(value, item);
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(value === current));
+    b.tabIndex = value === current ? 0 : -1;
+    b.type = 'button';
+    b.addEventListener('click', () => onPick(value));
+    b.addEventListener('keydown', (e) => {
+      const k = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!k) return;
+      e.preventDefault();
+      const all = [...group.children];
+      const next = all[(all.indexOf(b) + k + all.length) % all.length];
+      next.focus(); next.click();
+    });
+    group.append(b);
+  }
+  return group;
+}
+const pills = (items, current, key) => radios('pills', items, current, (v) => set(key, v), (v, item) => el('button', { class: 'pill' }, item.label));
+const metalSwatches = (current, key) => radios('swatches', Object.entries(METALS), current, (v) => set(key, v), (v, m) => el('button', { class: 'swatch' }, el('i', { style: `background:radial-gradient(circle at 35% 30%, #fff, ${m.swatch} 55%, ${m.swatch})` }), m.label));
+
+function profileSvg(kind, w = 4, t = autoThickness(4), big = false) {
+  const pts = profilePoints(kind, w, t);
+  const maxW = big ? 110 : 52, maxH = big ? 54 : 26;
+  const k = Math.min(maxW / w, maxH / (t * 1.25));
+  const ox = (big ? 120 : 56) / 2, oy = (big ? 64 : 30) / 2 + (t * k) / 2;
+  const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${(ox + x * k).toFixed(1)} ${(oy - y * k).toFixed(1)}`).join('') + 'Z';
+  return `<svg viewBox="0 0 ${big ? 120 : 56} ${big ? 64 : 30}" aria-hidden="true"><path d="${d}" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+}
+
+function stepShape() {
+  const r = ring(), d = designs[state.active].specs;
+  const preview = el('div', { class: 'preview', html: `${profileSvg(r.profile, d.width, d.thickness, true)}<div>${PROFILES[r.profile].label} · ${d.width.toFixed(2)} × ${d.thickness.toFixed(2)} mm</div>` });
+  const profiles = radios('choices', Object.entries(PROFILES), r.profile, (v) => set('profile', v), (v, p) => el('button', { class: 'choice', html: `${profileSvg(v)}<span>${p.label}</span>` }));
+  const width = el('input', { type: 'range', min: 2, max: 10, step: 0.1, value: r.width, 'aria-label': 'Width in millimetres', on: { input: (e) => { ring().width = Number(e.target.value); if (ring().autoThickness) ring().thickness = autoThickness(ring().width); if (state.linked) { /* width is personal */ } badge.textContent = `${widthName(ring().width)} ${ring().width.toFixed(2)} mm`; scheduleBuild(); } } });
+  const badge = el('div', { class: 'badge' }, `${widthName(r.width)} ${r.width.toFixed(2)} mm`);
+  const auto = el('input', { type: 'checkbox', checked: r.autoThickness, on: { change: (e) => set('autoThickness', e.target.checked) } });
+  const thickness = el('input', { type: 'range', min: 1.2, max: 3, step: 0.05, value: d.thickness, disabled: r.autoThickness, 'aria-label': 'Thickness in millimetres', on: { input: (e) => { ring().thickness = Number(e.target.value); scheduleBuild(); } } });
+  const sizes = el('select', { 'aria-label': 'Ring size', on: { change: (e) => set('size', Number(e.target.value)) } }, ...EU_SIZES.map((s) => new Option(`EU ${s} · US ${diameterToUs(euToDiameter(s)).toFixed(1)} · ${euToDiameter(s).toFixed(1)} mm`, s, false, s === r.size)));
+  return [
+    card('Profile', PROFILES[r.profile].label, preview, profiles),
+    card('Width', `${widthName(r.width)}`, el('div', { class: 'slider', style: 'text-align:center' }, badge, width, el('div', { class: 'ends' }, el('span', {}, 'Thin'), el('span', {}, 'Bold'))),
+      el('label', { class: 'toggle' }, auto, 'Auto-match thickness to width'),
+      el('div', { class: 'slider' }, el('div', { class: 'ends' }, el('span', {}, `Thickness ${d.thickness.toFixed(2)} mm`)), thickness)),
+    card('Shape', BAND_SHAPES[r.shape].label, pills(Object.entries(BAND_SHAPES), r.shape, 'shape')),
+    card('Ring size', `EU ${r.size}`, sizes),
+  ];
+}
+
+function stepMetals() {
+  const r = ring();
+  const out = [
+    card('Metal', METALS[r.metal].label, metalSwatches(r.metal, 'metal'), el('div', { style: 'height:10px' }), pills([['14k', { label: '14k gold' }], ['18k', { label: '18k gold' }]], r.karat, 'karat')),
+    card('Design', LAYOUTS[r.layout].label, radios('choices', Object.entries(LAYOUTS), r.layout, (v) => set('layout', v), (v, l) => el('button', { class: 'choice', html: `${layoutSvg(v, r)}<span>${l.label}</span>` }))),
+  ];
+  if (r.layout !== 'single') out.push(card('Second metal', METALS[r.metal2].label, metalSwatches(r.metal2, 'metal2')));
+  out.push(card(r.layout === 'single' ? 'Finish' : `Finish: ${METALS[r.metal].label.toLowerCase()}`, FINISHES[r.finish].label, pills(Object.entries(FINISHES), r.finish, 'finish')));
+  if (r.layout !== 'single' && r.layout !== 'inside') out.push(card(`Finish: ${METALS[r.metal2].label.toLowerCase()}`, FINISHES[r.finish2].label, pills(Object.entries(FINISHES), r.finish2, 'finish2')));
+  out.push(card('Grooves', GROOVES[r.grooves].label, pills(Object.entries(GROOVES), r.grooves, 'grooves')));
+  return out;
+}
+
+function layoutSvg(layout, r) {
+  const a = METALS[r.metal].swatch, b = METALS[r.metal2].swatch;
+  const zones = { single: [[0, 1, a]], split: [[0, 0.5, a], [0.5, 1, b]], stripe: [[0, 0.33, a], [0.33, 0.67, b], [0.67, 1, a]], edges: [[0, 0.17, b], [0.17, 0.83, a], [0.83, 1, b]], inside: [[0, 1, a]] }[layout];
+  const rects = zones.map(([x0, x1, c]) => `<rect x="${4 + x0 * 48}" y="6" width="${(x1 - x0) * 48}" height="${layout === 'inside' ? 13 : 18}" fill="${c}"/>`).join('');
+  const lining = layout === 'inside' ? `<rect x="4" y="19" width="48" height="5" fill="${b}"/>` : '';
+  return `<svg viewBox="0 0 56 30" aria-hidden="true"><g>${rects}${lining}</g><rect x="4" y="6" width="48" height="18" rx="3" fill="none" stroke="rgba(0,0,0,.18)"/></svg>`;
+}
+
+function stepDiamonds() {
+  const r = ring();
+  const out = [card('Diamonds', SETTINGS[r.setting].label, pills(Object.entries(SETTINGS), r.setting, 'setting'))];
+  if (r.setting !== 'none') {
+    const size = el('input', { type: 'range', min: 1, max: 3, step: 0.05, value: r.stoneSize, 'aria-label': 'Stone size in millimetres', on: { input: (e) => { ring().stoneSize = Number(e.target.value); scheduleBuild(); } } });
+    const pos = el('input', { type: 'range', min: -1, max: 1, step: 0.05, value: r.stonePosition, 'aria-label': 'Position across the band', on: { input: (e) => { ring().stonePosition = Number(e.target.value); scheduleBuild(); } } });
+    const s = designs[state.active].specs.stones;
+    out.push(card('Stone size', `${r.stoneSize.toFixed(2)} mm · ${s.count} × = ${s.carats.toFixed(2)} ct`, size));
+    out.push(card('Position', r.stonePosition < -0.15 ? 'Towards one edge' : r.stonePosition > 0.15 ? 'Towards the other edge' : 'Centre', pos,
+      el('div', { class: 'slider' }, el('div', { class: 'ends' }, el('span', {}, 'Edge'), el('span', {}, 'Centre'), el('span', {}, 'Edge')))));
+  }
+  return out;
+}
+
+function stepEngraving() {
+  const r = ring();
+  const input = el('input', { type: 'text', maxlength: 24, value: r.engraving, placeholder: 'For example: Always · 14.06.2027', 'aria-label': 'Engraving text', on: { input: (e) => { ring().engraving = e.target.value; scheduleBuild(450); } } });
+  return [
+    card('Engraving', `${r.engraving.length}/24`, input, el('p', { class: 'note' }, 'Engraved inside the band. The view turns to show it.')),
+    card('Lettering', ENGRAVING_FONTS[r.font].label, radios('pills', Object.entries(ENGRAVING_FONTS), r.font, (v) => set('font', v), (v, f) => el('button', { class: 'pill', style: `font:${f.css.replace('{px}', 14)}` }, f.label))),
+  ];
+}
+
+function renderPanel() {
+  const step = STEPS[state.step - 1];
+  const focusValue = document.activeElement?.closest?.('.panel') ? document.activeElement : null;
+  const restore = focusValue ? { label: focusValue.closest('[role="radiogroup"]')?.previousElementSibling?.textContent, text: focusValue.textContent, aria: focusValue.getAttribute('aria-label') } : null;
+  panel.replaceChildren(...step.render());
+  if (restore) {
+    const match = [...panel.querySelectorAll('button, input, select')].find((b) => (restore.aria && b.getAttribute('aria-label') === restore.aria) || (b.textContent === restore.text && b.getAttribute('aria-checked') === 'true'));
+    match?.focus({ preventScroll: true });
+  }
+  for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.ring === state.active));
+  document.getElementById('link').setAttribute('aria-pressed', String(state.linked));
+  const steps = document.getElementById('steps');
+  steps.replaceChildren(...STEPS.map((s) => el('button', { class: 'step', type: 'button', 'aria-current': s.n === state.step ? 'step' : false, on: { click: () => goStep(s.n) } }, el('i', {}, String(s.n)), s.label)));
+  const next = STEPS[state.step];
+  document.getElementById('next').textContent = next ? `Continue to ${next.label}` : 'Add pair to cart';
+}
+
+function renderPrice() {
+  const total = prices.her.total + prices.his.total;
+  document.getElementById('total').textContent = money(total);
+  document.getElementById('each').textContent = `Her ${money(prices.her.total)} · His ${money(prices.his.total)}`;
+  const bd = document.getElementById('breakdown');
+  bd.replaceChildren(...['her', 'his'].flatMap((r) => [
+    el('b', {}, r === 'her' ? `Her ring · ${designs.her.specs.grams.toFixed(1)} g` : `His ring · ${designs.his.specs.grams.toFixed(1)} g`),
+    ...prices[r].lines.map((l) => el('div', {}, el('span', {}, l.label), el('span', {}, money(l.amount)))),
+  ]));
+}
+
+let buildTimer = null;
+function scheduleBuild(delay = 60) {
+  clearTimeout(buildTimer);
+  buildTimer = setTimeout(() => { update(); }, delay);
+}
+
+function focusRing(r, view = 'ring') {
+  const i = groupOf[r];
+  if (i == null) { stage.focus('overview'); return; }
+  const box = stage.groupBounds(i);
+  const c = box.getCenter(box.min.clone());
+  const yaw = state.show === 'both' ? (r === 'her' ? 28 : -38) : 0;
+  if (view === 'inside') {
+    const R = euToDiameter(state[r].size) / 2;
+    stage.look({ target: [c.x, c.y - R * 0.62, c.z], polar: 36, azimuth: yaw, distance: R * 3.3 });
+  } else {
+    stage.look({ target: c, box, polar: 72, azimuth: yaw + 18, margin: 0.8 });
+  }
+}
+
+function goStep(n) {
+  state.step = n;
+  update({ rebuild: false });
+  if (n === 4) focusRing(state.active, 'inside');
+  else if (n === 3) focusRing(state.active);
+  else stage.focus('overview');
+}
+
+for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => {
+  state.active = t.dataset.ring;
+  update({ rebuild: state.show !== 'both' });
+  focusRing(state.active, state.step === 4 ? 'inside' : 'ring');
+});
+document.getElementById('link').addEventListener('click', () => {
+  state.linked = !state.linked;
+  // Linking copies the shared choices of the ring being designed onto the other one.
+  if (state.linked) { const other = state.active === 'her' ? 'his' : 'her'; for (const k of Object.keys(DEFAULT_BAND)) if (!PERSONAL.has(k)) state[other][k] = ring()[k]; }
+  update();
+  toast(state.linked ? 'Both rings change together' : 'Rings change separately');
+});
+document.getElementById('next').addEventListener('click', () => {
+  if (state.step < 4) { goStep(state.step + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  const detail = { type: 'band-builder:add-to-cart', her: { design: state.her, specs: designs.her.specs, price: prices.her }, his: { design: state.his, specs: designs.his.specs, price: prices.his } };
+  window.dispatchEvent(new CustomEvent('band-builder:add-to-cart', { detail }));
+  if (window.parent !== window) window.parent.postMessage(detail, '*');
+  else toast('Your pair is in the cart');
+});
+const toggle = document.getElementById('toggle-breakdown');
+toggle.addEventListener('click', () => {
+  const bd = document.getElementById('breakdown');
+  bd.hidden = !bd.hidden;
+  toggle.setAttribute('aria-expanded', String(!bd.hidden));
+  toggle.textContent = bd.hidden ? 'Price breakdown' : 'Hide breakdown';
+});
+document.getElementById('share').addEventListener('click', async () => {
+  try {
+    if (navigator.share) await navigator.share({ title: 'Our wedding bands', url: location.href });
+    else { await navigator.clipboard.writeText(location.href); toast('Link copied'); }
+  } catch { /* closed */ }
+});
+const toastEl = document.getElementById('toast');
+function toast(text) { toastEl.textContent = text; toastEl.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove('show'), 2200); }
+
+// Settings: which rings, background, turning.
+const gear = document.getElementById('gear'), settings = document.getElementById('settings');
+gear.addEventListener('click', () => { settings.hidden = !settings.hidden; gear.setAttribute('aria-expanded', String(!settings.hidden)); });
+function renderSettings() {
+  document.getElementById('show').replaceChildren(radios('pills', [['both', { label: 'Both rings' }], ['one', { label: 'This ring' }]], state.show, (v) => { state.show = v; renderSettings(); update(); stage.fit(); }, (v, i) => el('button', { class: 'pill' }, i.label)));
+  document.getElementById('backgrounds').replaceChildren(radios('pills', Object.entries(BACKGROUNDS), state.background, (v) => { state.background = v; stage.setBackground(BACKGROUNDS[v].css); renderSettings(); }, (v, b) => el('button', { class: 'pill' }, b.label)));
+}
+document.getElementById('spin').addEventListener('change', (e) => stage.setAutoRotate(e.target.checked));
+document.getElementById('reset').addEventListener('click', () => { document.getElementById('zoom').value = 50; stage.fit(); });
+document.getElementById('zoom').addEventListener('input', (e) => stage.zoomTo(Number(e.target.value) / 100));
+
+// ─── Start ──
+let stage;
+try {
+  stage = new Stage(document.getElementById('stage'), { background: '#ffffff', rotateSpeed: 2.4 });
+} catch (e) {
+  document.getElementById('loading').textContent = 'This browser cannot show 3D. Try a recent Chrome, Safari or Firefox.';
+  throw e;
+}
+renderSettings();
+update();
+requestAnimationFrame(() => requestAnimationFrame(() => { document.getElementById('loading').hidden = true; }));
+
+if (params.has('stats')) {
+  const box = document.createElement('div');
+  box.className = 'stats';
+  document.querySelector('.stage-wrap').append(box);
+  setInterval(() => { const s = stage.stats; box.textContent = `${s.fps} fps · ${s.ms.toFixed(1)} ms · ${s.ratio}× · ${Math.round(s.triangles / 1000)}k tris · still ${s.samples}`; }, 500);
+}
+
+window.bandBuilder = {
+  stage, state,
+  get designs() { return designs; },
+  get prices() { return prices; },
+  set(ringName, o) { Object.assign(state[ringName], o); update(); },
+  goStep, focusRing,
+};
+</script>

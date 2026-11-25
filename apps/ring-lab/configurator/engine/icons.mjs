@@ -49,6 +49,7 @@ export const HEAD_ICONS = {
   'secret-halo': svg(STONE + prongs([[15, 9], [25, 31]]) + dots([[12, 20.5], [16, 21], [20, 21.3], [24, 21], [28, 20.5]], 1.3) + dots([[16, 28.5], [20, 29.5], [24, 28.5]], 1.1) + '<path d="M13 34H27"/>'),
   bezel: svg('<path d="M10 16L14 12H26L30 16L20 27Z"/><path d="M7 14H33V19H7Z"/><path d="M12 19L16 34H24L28 19"/>'),
   'secret-bezel': svg(STONE + prongs([[15, 9], [25, 31]]) + '<path d="M10 19H30" stroke-width="2.2"/><path d="M13 34H27"/>'),
+  'three-stone': svg('<path d="M12 18L15 15H25L28 18L20 28Z"/><path d="M3 21L5 19H10L12 21L7.5 27Z"/><path d="M28 21L30 19H35L37 21L32.5 27Z"/><path d="M15 34C15 28 13 24 13 16M25 34C25 28 27 24 27 16"/><path d="M13 34H27"/>'),
   tulip: svg(STONE + prongs([[15, 9], [25, 31]]) + '<path d="M10 17C12 30 18 30 20 22C22 30 28 30 30 17"/><path d="M13 34H27"/>'),
 };
 

@@ -14,6 +14,8 @@ export const GEMS = {
   emerald:        { label: 'Emerald', ior: 1.58, dispersion: 0.007, absorption: [1.15, 0.1, 0.85], density: 2.72, swatch: ['#a6f0c4', '#14935a', '#064a2b'] },
   sapphire:       { label: 'Blue sapphire', ior: 1.77, dispersion: 0.009, absorption: [1.35, 0.75, 0.07], density: 4.0, swatch: ['#8fa8ff', '#2747b8', '#101e5c'] },
   ruby:           { label: 'Ruby', ior: 1.77, dispersion: 0.009, absorption: [0.03, 1.7, 1.15], density: 4.0, swatch: ['#ff9aa8', '#c8102e', '#5e0414'] },
+  yellowdiamond:  { label: 'Yellow diamond', ior: 2.417, dispersion: 0.022, absorption: [0.0, 0.04, 0.42], density: 3.52, swatch: ['#fff6c8', '#f1cf45', '#b88a12'] },
+  bluediamond:    { label: 'Blue diamond', ior: 2.417, dispersion: 0.022, absorption: [0.27, 0.09, 0.0], density: 3.52, swatch: ['#eef6ff', '#8fbdf0', '#3f74b8'] },
   pinkdiamond:    { label: 'Pink diamond', ior: 2.417, dispersion: 0.022, absorption: [0.0, 0.2, 0.085], density: 3.52, swatch: ['#fff0f5', '#f4a6c4', '#c0577f'] },
   yellowsapphire: { label: 'Yellow sapphire', ior: 1.77, dispersion: 0.009, absorption: [0.0, 0.05, 0.55], density: 4.0, swatch: ['#fff6c8', '#f1cf45', '#b88a12'] },
   tanzanite:      { label: 'Tanzanite', ior: 1.69, dispersion: 0.01, absorption: [0.55, 1.15, 0.05], density: 3.35, swatch: ['#c9c2ff', '#5b4bc4', '#261a6b'] },

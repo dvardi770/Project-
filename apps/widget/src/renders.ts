@@ -13,35 +13,75 @@ export function loadRenderManifest(set: RenderSet): Promise<RenderManifest | nul
   if (!pending) {
     pending = fetch(`${set.baseUrl}/media/manifest.json`, { credentials: 'omit' })
       .then((r) => (r.ok ? (r.json() as Promise<RenderManifest>) : null))
-      .catch(() => null);
+      .catch(() => null)
+      .then((m) => {
+        // A failed load is tried again next time (a phone may simply have lost its signal).
+        if (!m) manifests.delete(set.baseUrl);
+        return m;
+      });
     manifests.set(set.baseUrl, pending);
   }
   return pending;
 }
 
+/** The colour of a stocked metal, as the renderer names it. Palladium and silver look like white metal. */
+const metalColour = (metal: string) =>
+  metal.startsWith('YELLOW') ? 'yellow' : metal.startsWith('ROSE') ? 'rose' : metal.startsWith('PLATINUM') ? 'platinum' : 'white';
+
 /** The render manifest's metal for a stocked metal. Palladium and silver look like white metal. */
 export function renderMetal(metal: string, available: string[]): string | null {
-  const want = metal.startsWith('YELLOW') ? 'yellow' : metal.startsWith('ROSE') ? 'rose' : metal.startsWith('PLATINUM') ? 'platinum' : 'white';
+  const want = metalColour(metal);
   if (available.includes(want)) return want;
   return want === 'platinum' && available.includes('white') ? 'white' : null;
 }
 
-/** Viewer stones for the manifest's diamond colours. */
-const STONE_FOR_COLOUR: Record<string, string> = { white: 'diamond', yellow: 'yellow', pink: 'pinkdiamond', blue: 'bluediamond' };
+export interface RenderedPhoto {
+  id: string;
+  label: string;
+  /** Full size, and the smaller copy used for thumbnails and phones. */
+  src: string;
+  thumb: string;
+  srcset: string | null;
+}
 
+/** What the review step shows: photos, a 360° turn and live 3D, each when there is one. */
 export interface RenderedRing {
-  /** Folder of this variant's files. */
-  base: string;
-  views: { id: string; label: string }[];
-  video: string | null;
-  /** First frame of the video, shown while it loads. */
-  poster: string;
+  photos: RenderedPhoto[];
+  /** 360°: a video file, or another site's 360° viewer shown in a frame. */
+  spin: { url: string; poster: string | null; video: boolean } | null;
   /** Live 3D viewer for the same choices. */
-  viewer: string;
-  /** Shape the photos show, and whether it is the customer's diamond's shape. */
-  shape: string;
-  shapeLabel: string;
-  exactShape: boolean;
+  viewer: string | null;
+  /** The centre stone shape the photos show, when the renders say; null for the setting's own photos. */
+  shown: { shape: string; label: string; exact: boolean } | null;
+}
+
+const VIEW_LABELS: Record<string, string> = { threequarter: 'Angled', front: 'Front', side: 'Side', top: 'Top' };
+const isVideo = (url: string) => /\.(mp4|webm|mov)(\?|#|$)/i.test(url);
+
+/**
+ * The gallery from the setting's own photos and 360° when there is no render manifest (or it has
+ * not loaded): each photo, the 360° and the live 3D. Null when there is only one picture and
+ * nothing to switch to; the review step then shows that picture alone.
+ */
+export function photoGallery(images: string[], spinUrl: string | null, set: RenderSet | null, viewerUrl: string | null, metal: string): RenderedRing | null {
+  const viewer = set && viewerUrl
+    ? `${viewerUrl}?embed&${new URLSearchParams({ combo: set.combo, metal: metalColour(metal), rotate: '1' })}`
+    : null;
+  if (!images.length || (images.length < 2 && !spinUrl && !viewer)) return null;
+  const photos = images.map((url, i): RenderedPhoto => {
+    // The renderer's files: <view>-half.webp beside <view>.webp.
+    const m = url.match(/\/([a-z]+)-half\.(webp|jpe?g|png)(\?.*)?$/i);
+    if (!m || !VIEW_LABELS[m[1]!]) return { id: `photo-${i + 1}`, label: `Photo ${i + 1}`, src: url, thumb: url, srcset: null };
+    const full = url.replace(`-half.${m[2]}`, `.${m[2]}`);
+    return { id: m[1]!, label: VIEW_LABELS[m[1]!]!, src: full, thumb: url, srcset: `${url} 500w, ${full} 1000w` };
+  });
+  const poster = spinUrl?.match(/\/spin\.mp4(\?.*)?$/) ? spinUrl.replace(/spin\.mp4(\?.*)?$/, 'spin-poster.webp') : null;
+  return {
+    photos,
+    spin: spinUrl ? { url: spinUrl, poster, video: isVideo(spinUrl) } : null,
+    viewer,
+    shown: null,
+  };
 }
 
 /**
@@ -67,18 +107,17 @@ export function pickRendered(
   const fallback = variants[`${metalKey}.${combo.designedShape}.${colour}`] ?? variants[`${metalKey}.${combo.designedShape}.white`] ?? null;
   const variant = exact ?? fallback;
   if (!variant) return null;
+  // The live 3D shows the same ring as the photos: this combo, metal, shape and colour.
   const query = new URLSearchParams({
-    studio: 'white', rotate: '1', head: String(combo.head), shank: String(combo.shank),
-    metal: metalKey, stone: STONE_FOR_COLOUR[variant.colour] ?? 'diamond', shape: exact ? wanted : combo.designedShape,
+    combo: combo.id, metal: metalKey, shape: exact ? wanted : combo.designedShape, colour: variant.colour, rotate: '1',
   });
+  const base = `${set.baseUrl}/media/${variant.dir}`;
   return {
-    base: `${set.baseUrl}/media/${variant.dir}`,
-    views: manifest.views.filter((v) => variant.views.includes(v.id)),
-    video: variant.video,
-    poster: variant.poster ?? 'threequarter.webp',
+    photos: manifest.views
+      .filter((v) => variant.views.includes(v.id))
+      .map((v) => ({ id: v.id, label: v.label, src: `${base}/${v.id}.webp`, thumb: `${base}/${v.id}-half.webp`, srcset: `${base}/${v.id}-half.webp 500w, ${base}/${v.id}.webp 1000w` })),
+    spin: variant.video ? { url: `${base}/${variant.video}`, poster: `${base}/${variant.poster ?? 'threequarter.webp'}`, video: true } : null,
     viewer: `${set.viewerUrl}?embed&${query}`,
-    shape: variant.shape,
-    shapeLabel: manifest.shapes[variant.shape]?.label ?? variant.shape,
-    exactShape: !!exact,
+    shown: { shape: variant.shape, label: manifest.shapes[variant.shape]?.label ?? variant.shape, exact: !!exact },
   };
 }

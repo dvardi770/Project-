@@ -179,7 +179,7 @@ const brightFragment = /* glsl */`
     vec4 c = texture2D(tColor, vUv);
     vec3 rgb = c.rgb;
     float l = max(rgb.r, max(rgb.g, rgb.b));
-    gl_FragColor = vec4(rgb * smoothstep(threshold, threshold * 2.2, l), 1.0);
+    gl_FragColor = vec4(rgb * smoothstep(threshold, threshold * 1.8, l), 1.0);
   }`;
 
 const blurFragment = /* glsl */`
@@ -232,22 +232,10 @@ function studioMaps(renderer) {
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(60, 48, 24), dome));
   const boxes = [];
-  // Softboxes have diffusers: bright in the middle, fading towards their edges, so polished
-  // metal shows soft-edged highlights as in a photo, not hard rectangles. Small round lights stay
-  // crisp: they are the pin-point glints that make stones sparkle.
-  const feathered = () => new THREE.ShaderMaterial({
-    side: THREE.DoubleSide,
-    uniforms: { level: { value: 1 } },
-    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform float level; varying vec2 vUv;
-      void main() { vec2 e = min(vUv, 1.0 - vUv) * 2.0; float f = smoothstep(0.0, 0.6, e.x) * smoothstep(0.0, 0.6, e.y); gl_FragColor = vec4(vec3(level * (0.2 + 0.8 * f)), 1.0); }`,
-  });
   const box = (w, h, x, y, z, round = false) => {
-    const material = round ? new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }) : feathered();
-    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w, h), material);
+    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
     m.position.set(x, y, z);
     m.lookAt(0, 0, 0);
-    m.userData.setLevel = (v) => { if (round) material.color.setScalar(v); else material.uniforms.level.value = v; };
     scene.add(m);
     boxes.push(m);
     return m;
@@ -256,19 +244,19 @@ function studioMaps(renderer) {
     box(36, 36, 0, 46, 0), box(8, 48, -40, 8, 16), box(8, 48, 38, 8, -12),
     box(32, 12, 12, 14, 46), box(38, 6, 0, 12, -46), box(16, 6, -30, -6, -30),
   ];
-  const sparks = [[22, 34, 26], [-26, 28, -14], [6, 40, -22], [-18, 22, 34], [34, 18, 6], [-34, 12, -30], [12, 44, 10], [-8, 36, 30], [28, 26, -24], [-38, 20, 8], [0, 30, -38], [40, 32, -6]].map(([x, y, z]) => box(1.8, 0, x, y, z, true));
+  const sparks = [[22, 34, 26], [-26, 28, -14], [6, 40, -22], [-18, 22, 34], [34, 18, 6], [-34, 12, -30]].map(([x, y, z]) => box(2.2, 0, x, y, z, true));
   const flags = [[-44, -16], [44, 18], [18, -44], [-14, 46]].map(([x, z]) => box(9, 62, x, 6, z));
   const make = (o) => {
     dome.uniforms.top.value = o.top; dome.uniforms.mid.value = o.mid; dome.uniforms.low.value = o.low;
-    keys.forEach((k, i) => k.userData.setLevel(o.keys[i] * 1.25));
-    sparks.forEach((s) => s.userData.setLevel(o.spark));
-    flags.forEach((f) => f.userData.setLevel(o.flag));
+    keys.forEach((k, i) => k.material.color.setScalar(o.keys[i]));
+    sparks.forEach((s) => s.material.color.setScalar(o.spark));
+    flags.forEach((f) => f.material.color.setScalar(o.flag));
     const rt = new THREE.WebGLCubeRenderTarget(o.size, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
     new THREE.CubeCamera(0.5, 200, rt).update(renderer, scene);
     return rt;
   };
   const metalCube = make({ top: 1.3, mid: 0.58, low: 0.72, keys: [2.8, 5.2, 4.4, 2.2, 3.6, 2.4], spark: 7, flag: 0.2, size: 512 });
-  const stoneCube = make({ top: 0.95, mid: 0.26, low: 0.06, keys: [4.0, 8.5, 7.0, 3.0, 5.0, 3.4], spark: 18, flag: 0.0, size: 512 });
+  const stoneCube = make({ top: 0.75, mid: 0.17, low: 0.05, keys: [3.4, 7.5, 6.0, 2.4, 4.5, 3.0], spark: 16, flag: 0.0, size: 512 });
   const pmrem = new THREE.PMREMGenerator(renderer);
   const metal = pmrem.fromCubemap(metalCube.texture).texture;
   pmrem.dispose();
@@ -347,7 +335,7 @@ export class Stage {
    */
   constructor(container, options = {}) {
     this.container = container;
-    this.options = { background: '#ffffff', autoRotate: true, rotateSpeed: 3.2, ...options };
+    this.options = { background: '#ffffff', autoRotate: true, rotateSpeed: 3.2, adaptive: true, ...options };
     const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -376,21 +364,25 @@ export class Stage {
     controls.addEventListener('change', () => { this.moved = true; });
 
     this.maps = studioMaps(renderer);
+    // The turntable turns the ring and its shadow under fixed lights and camera, as on a
+    // photographer's turntable (the 360° video); the root holds the design.
+    this.turntable = new THREE.Group();
     this.root = new THREE.Group();
-    this.scene.add(this.root);
+    this.turntable.add(this.root);
+    this.scene.add(this.turntable);
 
     this.buildTargets();
     this.post = {
-      bright: new Pass(brightFragment, { tColor: { value: null }, threshold: { value: 1.6 } }),
+      bright: new Pass(brightFragment, { tColor: { value: null }, threshold: { value: 5.5 } }),
       blur: new Pass(blurFragment, { tColor: { value: null }, step: { value: new THREE.Vector2() } }),
       average: new Pass(averageFragment, { tFrame: { value: null }, tSum: { value: null }, weight: { value: 1 } }),
       compose: new Pass(composeFragment, {
-        tColor: { value: null }, tGlow: { value: null }, glow: { value: 0.35 }, exposure: { value: 1.0 },
+        tColor: { value: null }, tGlow: { value: null }, glow: { value: 0.18 }, exposure: { value: 1.0 },
         background: { value: new THREE.Color(this.options.background) },
       }),
     };
     this.shadow = this.makeShadow();
-    this.scene.add(this.shadow.plane);
+    this.turntable.add(this.shadow.plane);
 
     this.gemMaterials = new Map();
     this.metalMaterials = new Map();
@@ -527,6 +519,8 @@ export class Stage {
    */
   setDesign({ groups, frame }, { refit = false } = {}) {
     for (const o of this.objects) { this.root.remove(o); if (o.userData.owned) o.geometry.dispose(); }
+    this.turntable.rotation.y = 0;
+    this.turntable.updateMatrixWorld(true);
     const built = this.buildGroups(groups);
     for (const parent of built.parents) this.root.add(parent);
     this.objects = [...built.meshes, ...built.parents];
@@ -795,6 +789,8 @@ export class Stage {
       overview: { box: whole, target: centre, polar: 72, azimuth: 32, margin: 0.9 },
       head: { box: headBox, target: head, polar: 64, azimuth: 24, margin: 0.62 },
       top: { box: headBox, target: head, polar: 12, azimuth: 0, margin: 0.6 },
+      // The whole ring from above (a product photo's top view).
+      above: { box: whole, target: new THREE.Vector3(head.x, centre.y, head.z), polar: 8, azimuth: 0, margin: 0.9 },
       side: { box: whole, target: centre, polar: 84, azimuth: 90, margin: 0.86 },
       front: { box: whole, target: centre, polar: 86, azimuth: 0, margin: 0.86 },
       shank: { box: whole, target: centre, polar: 62, azimuth: 52, margin: 0.86 },
@@ -815,6 +811,8 @@ export class Stage {
     const to = new THREE.Spherical(d, (polar * Math.PI) / 180, (azimuth * Math.PI) / 180);
     if (keepAzimuth) to.theta = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target)).theta;
     if (!animate) {
+      // A jump cancels any move still under way.
+      this.tween = null;
       this.controls.target.copy(target);
       this.camera.position.copy(new THREE.Vector3().setFromSpherical(to).add(target));
       this.controls.update();
@@ -873,6 +871,21 @@ export class Stage {
   }
 
   setAutoRotate(on) { this.wantsRotate = on; this.controls.autoRotate = on; this.wake(); }
+
+  /** Turns the ring (and its shadow) on the turntable, in radians. */
+  setTurn(angle) {
+    this.turntable.rotation.y = angle;
+    this.turntable.updateMatrixWorld(true);
+    this.wake();
+  }
+
+  /** Finishes the occlusion bake at once and shows it in full (for rendering photos). */
+  settleOcclusion() {
+    while (this.ao?.job && this.ao.job.fade === null) this.stepOcclusion(performance.now());
+    if (this.ao?.job) this.ao.job = null;
+    this.aoUniforms.aoAmount.value = 1;
+    this.wake();
+  }
 
   setBackground(css) {
     this.options.background = css;
@@ -1046,7 +1059,7 @@ export class Stage {
     bright.material.uniforms.tColor.value = texture;
     bright.render(r, this.glowRT[0]);
     const [g0, g1] = this.glowRT;
-    for (const s of [1, 2]) {
+    for (const s of [1]) {
       blur.material.uniforms.tColor.value = g0.texture;
       blur.material.uniforms.step.value.set(s / g0.width, 0);
       blur.render(r, g1);
@@ -1066,7 +1079,7 @@ export class Stage {
     this.stats.fps = this.frameTimes.length;
     this.stats.ratio = this.ratio;
     this.stats.samples = this.samples;
-    if (!moving || this.frameTimes.length < 20) return;
+    if (!moving || !this.options.adaptive || this.frameTimes.length < 20) return;
     const span = (this.frameTimes[this.frameTimes.length - 1] - this.frameTimes[0]) / (this.frameTimes.length - 1);
     if (!this.lastAdapt) this.lastAdapt = now;
     if (now - this.lastAdapt < 1200) return;

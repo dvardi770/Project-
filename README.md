@@ -280,18 +280,25 @@ priced or checked by the API, and the cart hand-off is not yet wired to the stor
 
 ### Rendered photos, 360° video and 3D
 
-A setting can be rendered from the jeweller's CAD files with `apps/ring-lab` (see its README):
-photos from four angles (angled, front, side, top) and a 360° turntable video on white, for every
-metal, centre-stone shape and diamond colour, plus a live 3D viewer. The API serves a folder of
+A setting can be rendered with `apps/ring-lab` (see its README), from the jeweller's CAD files or
+from a design made from measurements: photos from four angles (angled, front, side, top) and a
+360° turntable video on white, for every metal, centre-stone shape and diamond colour, plus a live
+3D viewer. Photos, video and 3D all come from the ring builder's engine, so they match the 3D
+builders. The API serves a folder of
 render collections (`RENDERS_DIR`, at `/renders/`, or from a CDN with `RENDERS_PUBLIC_URL`), and a
 setting points at its renders with `renderKey` (`"<collection>/<combo>"`).
 
+- A collection holds `media/` (manifest, photos, videos), `viewer.html` with its engine (`engine/*.mjs`)
+  and, for CAD rings, `rings.json` and `rings.b64.txt`.
 - `GET /api/v1/settings` then returns `renders` (`baseUrl`, `combo`, `viewerUrl`) for the setting, and
   fills variants that have no photos of their own with the rendered ones (platinum and palladium use
   the white-metal renders).
 - In the review step the widget shows the photos for the chosen metal and diamond shape, thumbnails
   for the four angles, the 360° video (H.264 MP4, loaded only when opened) and the live 3D view.
   Shapes that were not rendered fall back to the setting's own shape, with a caption saying so.
+  If the collection's manifest cannot be loaded (it is tried again the next time the review opens),
+  the same thumbnails are made from the variant's own photos, its 360° and the 3D viewer. Settings
+  without renders get that gallery too when they have more than one photo or a 360°.
 - `/renders/` answers byte-range requests, which Safari needs to play video.
 
 It fires `jc-added-to-cart`, `jc-checkout` and `jc-error` on the element, and

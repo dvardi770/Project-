@@ -27,7 +27,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { ApiError, ConfiguratorApi, type Diamond, type Money, type Setting, type SettingVariant } from './api';
 import { addToShopifyCart, addToWooCommerceCart, detectPlatform, type StorefrontPlatform } from './cart';
 import { illustrationDefs, ringIllustration, stoneIcon } from './illustrations';
-import { loadRenderManifest, pickRendered, type RenderedRing } from './renders';
+import { loadRenderManifest, photoGallery, pickRendered, type RenderedRing } from './renders';
 import type { RenderManifest } from '@jewelry/shared/storefront';
 import { styles } from './styles';
 
@@ -812,41 +812,51 @@ export class JewelryConfigurator extends LitElement {
 
   // ── Step 3 ──
 
-  /** Photos from four angles, a 360° video and live 3D, rendered from the setting's CAD files. */
-  private renderRenderedGallery(r: RenderedRing, name: string, metal: string, d: Diamond): TemplateResult {
-    const view = this.renderView;
+  /**
+   * Photos from every angle, a 360° turn and live 3D: rendered from the setting's design files when
+   * the renders' manifest is there, otherwise from the setting's own photos and 360°.
+   */
+  private renderRenderedGallery(r: RenderedRing, name: string, metal: string, d: Diamond, extras: TemplateResult | typeof nothing): TemplateResult {
     const describe = `${name} in ${metalLabel(metal)}`;
+    // "Front view" for the renderer's angles; "Photo 2" for a store's own photos.
+    const named = (label: string) => (/^Photo \d+$/.test(label) ? label : `${label} view`);
+    const view = this.renderView === '360' && r.spin ? '360' : this.renderView === '3d' && r.viewer ? '3d' : (r.photos.find((p) => p.id === this.renderView) ?? r.photos[0]!).id;
     const thumb = (id: string, label: string, content: TemplateResult) => html`
       <button type="button" class="render-thumb" aria-pressed=${view === id} aria-label=${label} @click=${() => (this.renderView = id)}>${content}</button>
     `;
     let hero: TemplateResult;
     if (view === '3d') {
-      hero = html`<iframe src=${r.viewer} title="Live 3D view of the ${name}" loading="lazy" allow="fullscreen" referrerpolicy="no-referrer"></iframe>`;
-    } else if (view === '360' && r.video) {
-      hero = html`<video src="${r.base}/${r.video}" poster="${r.base}/${r.poster}" autoplay loop muted playsinline preload="auto" aria-label="360° view of the ${describe}"></video>`;
+      hero = html`<iframe src=${r.viewer!} title="Live 3D view of the ${name}" loading="lazy" allow="fullscreen" referrerpolicy="no-referrer"></iframe>`;
+    } else if (view === '360') {
+      const spin = r.spin!;
+      hero = spin.video
+        ? html`<video src=${spin.url} poster=${spin.poster ?? nothing} autoplay loop muted playsinline preload="auto" aria-label="360° view of the ${describe}"></video>`
+        : html`<iframe src=${spin.url} title="360° view of the ${describe}" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>`;
     } else {
-      const shown = r.views.find((x) => x.id === view) ?? r.views[0]!;
+      const shown = r.photos.find((p) => p.id === view)!;
       hero = html`<img
-        src="${r.base}/${shown.id}.webp"
-        srcset="${r.base}/${shown.id}-half.webp 500w, ${r.base}/${shown.id}.webp 1000w"
+        src=${shown.src}
+        srcset=${shown.srcset ?? nothing}
         sizes="(max-width: 700px) 100vw, 560px"
-        alt="${describe}, ${shown.label.toLowerCase()} view"
+        alt="${describe}, ${named(shown.label).toLowerCase()}"
         decoding="async"
       />`;
     }
+    const caption = !r.shown
+      ? 'Your ring is made to order.'
+      : r.shown.exact
+        ? 'Rendered from the design files. Your ring is made to order.'
+        : `Shown with a ${r.shown.label.toLowerCase()} centre stone; your ${titleCase(d.shape).toLowerCase()} diamond is set in the same design.`;
     return html`
       <div class="gallery">
         <div class="hero rendered">${hero}</div>
         <div class="render-thumbs" role="group" aria-label="Views">
-          ${r.views.map((x) => thumb(x.id, `${x.label} view`, html`<img src="${r.base}/${x.id}-half.webp" alt="" loading="lazy" decoding="async" />`))}
-          ${r.video ? thumb('360', '360° video', html`<img src="${r.base}/${r.poster}" alt="" loading="lazy" decoding="async" /><span class="tag">360°</span>`) : nothing}
-          ${thumb('3d', 'Live 3D', html`<span>3D</span>`)}
+          ${r.photos.map((p) => thumb(p.id, named(p.label), html`<img src=${p.thumb} alt="" decoding="async" />`))}
+          ${r.spin ? thumb('360', r.spin.video ? '360° video' : '360° view', html`${r.spin.poster || r.photos[0] ? html`<img src=${r.spin.poster ?? r.photos[0]!.thumb} alt="" decoding="async" />` : nothing}<span class="tag">360°</span>`) : nothing}
+          ${r.viewer ? thumb('3d', 'Live 3D', html`<span class="big">3D</span>`) : nothing}
         </div>
-        <p class="caption">
-          ${r.exactShape
-            ? 'Rendered from the design files. Your ring is made to order.'
-            : `Shown with a ${r.shapeLabel.toLowerCase()} centre stone; your ${titleCase(d.shape).toLowerCase()} diamond is set in the same design.`}
-        </p>
+        <p class="caption">${caption}</p>
+        ${extras}
       </div>
     `;
   }
@@ -857,13 +867,20 @@ export class JewelryConfigurator extends LitElement {
     const d = this.diamond!;
     const render = safeUrl(v.imageUrls[0]) ?? safeUrl(s.thumbnailUrl);
     const spin = safeUrl(v.video360Url ?? s.video360Url);
+    const images = v.imageUrls.map((u) => safeUrl(u)).filter((u): u is string => !!u);
+    const renders = s.renders && safeUrl(s.renders.baseUrl) ? s.renders : null;
     const rendered =
-      s.renders && this.renderManifest && safeUrl(s.renders.baseUrl)
-        ? pickRendered(this.renderManifest, s.renders, v.metal, d.shape, d.color)
-        : null;
+      (renders && this.renderManifest ? pickRendered(this.renderManifest, renders, v.metal, d.shape, d.color) : null) ??
+      photoGallery(images, spin, renders, renders ? safeUrl(renders.viewerUrl) : null, v.metal);
     const stoneImage = safeUrl(d.imageUrl);
     const stoneVideo = safeUrl(d.videoUrl);
     const cert = safeUrl(d.certificateUrl);
+    const stoneRow = stoneImage || stoneVideo
+      ? html`<div class="gallery-row">
+          ${stoneImage ? html`<span class="thumb small"><img src=${stoneImage} alt="${this.diamondTitle(d)}" loading="lazy" /></span>` : nothing}
+          ${stoneVideo ? html`<a class="link" href=${stoneVideo} target="_blank" rel="noopener noreferrer">Diamond video ↗</a>` : nothing}
+        </div>`
+      : nothing;
     const min = s.ringSize.min ?? 3;
     const max = s.ringSize.max ?? 13;
     const sizes: number[] = [];
@@ -892,7 +909,7 @@ export class JewelryConfigurator extends LitElement {
         <h2 tabindex="-1">Review your ring</h2>
       </header>
       <div class="review">
-        ${rendered ? this.renderRenderedGallery(rendered, s.name, v.metal, d) : html`<div class="gallery">
+        ${rendered ? this.renderRenderedGallery(rendered, s.name, v.metal, d, stoneRow) : html`<div class="gallery">
           <div class="hero">
             ${this.show360 && spin
               ? isVideoFile(spin)
@@ -915,9 +932,8 @@ export class JewelryConfigurator extends LitElement {
                   ${this.show360 ? 'Show photo' : 'View in 360°'}
                 </button>`
               : nothing}
-            ${stoneImage ? html`<span class="thumb small"><img src=${stoneImage} alt="${this.diamondTitle(d)}" loading="lazy" /></span>` : nothing}
-            ${stoneVideo ? html`<a class="link" href=${stoneVideo} target="_blank" rel="noopener noreferrer">Diamond video ↗</a>` : nothing}
           </div>
+          ${stoneRow}
         </div>`}
 
         <div class="summary">

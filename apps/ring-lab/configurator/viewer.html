@@ -1,0 +1,142 @@
+<title>Ring Viewer</title>
+<meta name="description" content="A setting in live 3D, in the chosen metal, centre stone shape and colour.">
+<style>
+  :root { --bg: #ffffff; --muted: #77716a; color-scheme: light; }
+  html, body { margin: 0; height: 100%; background: var(--bg); }
+  #stage { position: fixed; inset: 0; }
+  .status { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--muted); pointer-events: none; transition: opacity .4s; }
+  .status[hidden] { display: grid !important; opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { .status { transition: none; } }
+</style>
+<div id="stage"></div>
+<p class="status" id="status">Loading the ring…</p>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "meshoptimizer/decoder": "https://cdn.jsdelivr.net/npm/meshoptimizer@1.3.0/meshopt_decoder.mjs"
+} }
+</script>
+<script type="module">
+/*
+ * One setting in live 3D, on the same stage as the ring builder. The ring builder's review step
+ * frames it (?embed&combo=…&metal=…&shape=…&colour=…), and the media renderer drives it through
+ * window.studio, so the photos, the 360° video and the live 3D all come from the same engine.
+ *
+ * The collection's media/manifest.json says what each combo is: a design made from
+ * measurements ({ kind: 'design', design }) or a CAD ring ({ kind: 'cad', head, shank }, read
+ * from rings.json beside this page).
+ */
+import { Stage } from './engine/stage.mjs';
+import { buildRing } from './engine/ring.mjs';
+import { loadCad, buildCadRing, designedShape } from './engine/cad.mjs';
+import { restingPose, posed } from './engine/pose.mjs';
+
+const params = new URLSearchParams(location.search);
+const status = document.getElementById('status');
+// Diamond colours in the render manifest, and the stones they are drawn with.
+const COLOUR_GEM = { white: 'diamond', yellow: 'yellowdiamond', pink: 'pinkdiamond', blue: 'bluediamond' };
+// Photo views: the manifest's names and the stage's.
+const VIEWS = { threequarter: 'overview', front: 'front', side: 'side', top: 'above' };
+
+let cad = null;
+/**
+ * A stage design for a combo: spec = { kind, design | head + shank, metal, shape, colour, pose }.
+ */
+async function designFor(spec) {
+  const gem = COLOUR_GEM[spec.colour] ?? 'diamond';
+  const metal = spec.metal ?? 'white';
+  let design;
+  if (spec.kind === 'cad') {
+    cad ??= await loadCad();
+    const r = await buildCadRing(cad, { head: spec.head, shank: spec.shank ?? spec.head, shape: spec.shape ?? null, gem, headMetal: metal, shankMetal: metal });
+    design = { groups: [{ parts: r.parts, stones: r.stones }], frame: r.frame, bandTop: r.frame.bandTop };
+  } else {
+    const o = { ...spec.design, gem, headMetal: metal, shankMetal: metal };
+    if (spec.shape) o.shape = spec.shape;
+    const r = buildRing(o);
+    design = {
+      groups: [{ parts: [{ geometry: r.metal.shank, metal }, { geometry: r.metal.head, metal }], stones: r.stones }],
+      frame: r.frame, bandTop: r.frame.radius,
+    };
+  }
+  // Lying down (the 360° video): on its side, resting on band and head.
+  if (spec.pose === 'flat') design = { ...posed(design, restingPose(design, design.bandTop + 0.3)), flat: true };
+  return design;
+}
+
+let stage;
+try {
+  stage = new Stage(document.getElementById('stage'), { background: params.get('background') || '#ffffff', autoRotate: params.get('rotate') === '1', rotateSpeed: 2.6, adaptive: !params.has('render') });
+  // Rendering media: frames are made on request only, at a fixed resolution.
+  if (params.has('render')) stage.renderer.setAnimationLoop(null);
+} catch (e) {
+  status.textContent = 'This browser cannot show 3D.';
+  throw e;
+}
+
+async function show(spec) {
+  const design = await designFor(spec);
+  stage.setDesign(design);
+  if (design.flat) turntableView(); else stage.focus(spec.view ? VIEWS[spec.view] ?? spec.view : 'overview', { animate: false });
+  status.hidden = true;
+  return design;
+}
+
+/** The 360° camera: a little above the table, fixed, framing the ring at every turn. */
+function turntableView() {
+  const box = stage.bounds();
+  const c = box.getCenter(box.min.clone());
+  let r = 0;
+  for (const x of [box.min.x, box.max.x]) for (const z of [box.min.z, box.max.z]) r = Math.max(r, Math.hypot(x - c.x, z - c.z));
+  const turnBox = box.clone();
+  turnBox.min.x = c.x - r; turnBox.max.x = c.x + r; turnBox.min.z = c.z - r; turnBox.max.z = c.z + r;
+  // The box is round the circle the ring sweeps; its corners may fall outside the frame.
+  stage.look({ target: c, polar: 58, azimuth: 0, box: turnBox, margin: 1.22, animate: false, rotateAfter: false });
+}
+
+// ── Embedded in the ring builder: one combo from the collection's manifest ──
+if (params.has('combo')) {
+  try {
+    const manifest = await fetch('media/manifest.json').then((r) => r.json());
+    const combo = manifest.combos.find((c) => c.id === params.get('combo'));
+    if (!combo) throw new Error(`no combo ${params.get('combo')}`);
+    await show({ ...combo, metal: params.get('metal') || 'white', shape: params.get('shape') || null, colour: params.get('colour') || 'white', pose: params.get('pose') });
+  } catch (e) {
+    status.textContent = 'This ring could not be shown in 3D.';
+    throw e;
+  }
+}
+
+// ── The media renderer's interface ──
+window.studio = {
+  show,
+  /** A finished photo of the current design from a named view, as a PNG data URL. */
+  async photo({ view = 'threequarter', samples = 10 } = {}) {
+    stage.resize();
+    stage.setAutoRotate(false);
+    stage.setTurn(0);
+    stage.focus(VIEWS[view] ?? view, { animate: false });
+    stage.settleOcclusion();
+    return stage.snapshot(samples);
+  },
+  /** One frame of the 360° turntable at `angle` radians, as a PNG data URL. */
+  async turn({ angle = 0, samples = 1 } = {}) {
+    stage.resize();
+    stage.setAutoRotate(false);
+    stage.settleOcclusion();
+    stage.setTurn(angle);
+    return stage.snapshot(samples);
+  },
+  /** The shape a CAD ring was designed for. */
+  async designedShape(ring) { cad ??= await loadCad(); return designedShape(cad, ring); },
+  /** The CAD rings in rings.json beside this page (none if there is no such file). */
+  async cadRings() {
+    try { cad ??= await loadCad(); } catch { return []; }
+    return cad.data.rings.map((r, i) => ({ index: i, headLabel: r.headLabel, shankLabel: r.shankLabel, fits: cad.fit[`${i}-${i}`]?.verdict !== 'no' }));
+  },
+  stage,
+};
+window.dispatchEvent(new Event('studio-ready'));
+</script>

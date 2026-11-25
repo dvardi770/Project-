@@ -2,7 +2,7 @@
  * Rendered media for settings (photos from four angles, a 360° video and live 3D), made by
  * apps/ring-lab and stored as collections under RENDERS_DIR:
  *
- *   <collection>/index.html                   the live 3D viewer
+ *   <collection>/viewer.html, engine/*.mjs    the live 3D viewer (the ring builder's engine)
  *   <collection>/media/manifest.json          what was rendered (RenderManifest)
  *   <collection>/media/<combo>/<variant>/…    the photos and video
  *
@@ -40,7 +40,7 @@ export function renderMetal(metal: MetalType, available: string[]): string | nul
 export function renderSet(publicBase: string, renderKey: string): RenderSet {
   const [collection, combo] = renderKey.split('/') as [string, string];
   const baseUrl = `${publicBase}/${collection}`;
-  return { baseUrl, combo, viewerUrl: `${baseUrl}/index.html` };
+  return { baseUrl, combo, viewerUrl: `${baseUrl}/viewer.html` };
 }
 
 /**

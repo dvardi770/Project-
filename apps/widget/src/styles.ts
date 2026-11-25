@@ -782,6 +782,10 @@ export const styles = css`
   .render-thumb {
     position: relative;
   }
+  .render-thumb .big {
+    font-size: 0.875rem;
+    letter-spacing: 0.02em;
+  }
   .render-thumb .tag {
     position: absolute;
     left: 50%;

@@ -24,6 +24,7 @@ export const HEADS = {
   bezel:          { label: 'Bezel', prongs: 0, bezel: 'full' },
   'secret-bezel': { label: 'Secret Bezel', prongs: 4, bezel: 'secret' },
   tulip:          { label: 'Tulip', prongs: 6, tulip: true },
+  'three-stone':  { label: 'Three Stone', prongs: 4, sides: true },
 };
 
 // w: band width (along the finger) and t: thickness, each [at the bottom, at the head].
@@ -81,7 +82,7 @@ export function buildRing(input = {}) {
   const crownH = centre.top * W;         // girdle middle to table
 
   const headMesh = new Mesh(), shankMesh = new Mesh();
-  const stones = { centre: [], accent: [], channel: [] };
+  const stones = { centre: [], accent: [], channel: [], side: [] };
 
   // The band's top under the head, and how high the stone sits above it.
   const tTop = shank.strands ? shank.strand * 2 : shank.t[1];
@@ -185,10 +186,65 @@ export function buildRing(input = {}) {
     }
   }
 
+  // Three stone: a round stone either side of the centre, lower down on the band's shoulders and
+  // tilted outwards with its curve, each in its own four-prong basket that sits on the band,
+  // their girdles close to the centre stone's.
   const headReach = head.halo ? clamp(0.15 * Math.min(W, L), 0.9, 1.5) * 1.15 + 0.15 : rp * 2.2;
+  let sideReach = 0, sideFoot = 0, sideRail = null;
+  if (head.sides) {
+    const ds = clamp(0.62 * Math.min(W, L), 2.6, 6.5);
+    const sc = cut('round');
+    const sDepth = -sc.bottom * ds, sCrown = sc.top * ds;
+    const srp = clamp(0.07 * ds, 0.28, 0.5);
+    const lift = sDepth + 0.95;                       // girdle above the basket's foot
+    const tilt = 0.6;                                 // how far the stones lean with the band
+    const gap = 0.12 + rp * 0.2;                      // side girdle to centre girdle
+    // The centre basket's mid rail, at its widest along x.
+    let inner = 0;
+    for (let deg = 0; deg < 360; deg += 2) inner = Math.max(inner, Math.abs(beside(deg, 0, 0, 0)[0]));
+    const placeAt = (phi) => {
+      const tBand = shank.strands ? shank.strand * 2 : shankShape(shank, phi).t;
+      const rho = R + tBand + lift - 0.22;            // the foot sinks a little into the band
+      const th = tilt * phi;
+      return { phi, th, c: [rho * Math.sin(phi), rho * Math.cos(phi)], right: [Math.cos(th), -Math.sin(th)], up: [Math.sin(th), Math.cos(th)] };
+    };
+    // Lean out along the band until the side stone's inner girdle clears the centre stone.
+    let lo = 0.01, hi = 1.2;
+    for (let k = 0; k < 40; k++) {
+      const mid = (lo + hi) / 2, s = placeAt(mid);
+      if (s.c[0] - s.right[0] * (ds / 2) < inner + gap) lo = mid; else hi = mid;
+    }
+    const s = placeAt(hi);
+    for (const sx of [-1, 1]) {
+      const right = [s.right[0], sx * s.right[1], 0], up = [sx * s.up[0], s.up[1], 0], z = [0, 0, 1];
+      const c = [sx * s.c[0], s.c[1], 0];
+      // A point in the side stone's own frame: x towards its outer side, y up through its table.
+      const local = (lx, ly, lz) => vec.add(vec.add(vec.add(c, vec.scale(right, sx * lx)), vec.scale(up, ly)), vec.scale(z, lz));
+      const at = (deg, f, out, ly) => {
+        const a = deg * DEG, r = (ds / 2) * (1 - f * 0.92) + out;
+        return local(r * Math.cos(a), ly, r * Math.sin(a));
+      };
+      stones.side.push(matrix(right, up, z, ds, c));
+      for (const deg of [45, 135, 225, 315]) {
+        wire(headMesh, curve([
+          at(deg, 0.72, srp * 0.6, -lift),
+          at(deg, 0.5, srp * 1.05, -sDepth * 0.5),
+          at(deg, 0, srp * 0.95, 0),
+          at(deg, 0.035, srp * 0.42, sCrown * 0.5 + srp * 0.3),
+        ], { steps: 7 }), { radius: (t) => srp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(t * 1.4, 1)) - 0.06 * t), sides: 16 });
+      }
+      wire(headMesh, Array.from({ length: 48 }, (_, k) => at((k / 48) * 360, 0.5, srp * 1.1, -sDepth * 0.5)), { radius: srp * 0.72, closed: true, sides: 12 });
+      wire(headMesh, Array.from({ length: 36 }, (_, k) => at((k / 36) * 360, 0.72, srp * 0.6, -lift)), { radius: srp * 0.85, closed: true, sides: 12 });
+      if (sx === 1) sideRail = { x: at(0, 0.5, srp * 1.1, -sDepth * 0.5)[0], y: at(0, 0.5, srp * 1.1, -sDepth * 0.5)[1] };
+    }
+    const outer = s.c[0] + s.right[0] * (ds / 2 + srp) + s.up[0] * sCrown;
+    sideReach = Math.max(0, outer - (W / 2 + headReach));
+    // Where the side basket's foot meets the band, measured along the band.
+    sideFoot = (R + tTop) * Math.sin(s.phi) + (ds / 2) * 0.4 + srp;
+  }
 
   // ── Shank ──
-  const headHalf = Math.max(0.36 * W + rp * 1.6, head.halo ? 0.2 * W : 0) + 0.25;   // head's footprint on the band (along x)
+  const headHalf = Math.max(0.36 * W + rp * 1.6, head.halo ? 0.2 * W : 0, sideFoot) + 0.25;   // head's footprint on the band (along x)
   const phiHead = Math.asin(clamp(headHalf / (R + tTop), 0, 0.95));
   const channel = shank.channel ? channelPlaces(R, shank, phiHead) : null;
   if (shank.strands) strandsShank(shankMesh, R, shank);
@@ -197,7 +253,8 @@ export function buildRing(input = {}) {
   if (shank.cathedral) {
     // Shoulders that leave the band and sweep up in an arch to the basket, leaving an open
     // window between arch and band on each side.
-    const rail = { x: 0.27 * W + rp * 1.1, y: yGirdle - depth * 0.5 };
+    // With side stones, the arches rise to the side baskets instead.
+    const rail = sideRail ?? { x: 0.27 * W + rp * 1.1, y: yGirdle - depth * 0.5 };
     paveFrom = cathedralArms(shankMesh, R, shank, phiHead, rail, shank.pave ? stones.accent : null);
   }
   if (shank.pave) paveRows(shankMesh, R, shank, paveFrom, stones.accent);
@@ -205,12 +262,12 @@ export function buildRing(input = {}) {
 
   // ── Specs ──
   const gem = GEMS[o.gem], accentGem = GEMS[o.accentGem];
-  const accentCarats = sumCarats(stones.accent, 'round-accent', accentGem.density) + sumCarats(stones.channel, 'princess-accent', accentGem.density);
+  const accentCarats = sumCarats(stones.accent, 'round-accent', accentGem.density) + sumCarats(stones.channel, 'princess-accent', accentGem.density) + sumCarats(stones.side, 'round', accentGem.density);
   const centreCarats = caratsOf(o.shape, W, gem.density);
   const headVolume = headMesh.volume, shankVolume = shankMesh.volume;
   const specs = {
     centre: { shape: o.shape, label: SHAPES[o.shape].label, size: o.carat, carats: round(centreCarats, 2), mm: [round(L, 2), round(W, 2)], gem: o.gem },
-    accents: { count: stones.accent.length + stones.channel.length, carats: round(accentCarats, 2), gem: o.accentGem },
+    accents: { count: stones.accent.length + stones.channel.length + stones.side.length, carats: round(accentCarats, 2), gem: o.accentGem },
     totalCarats: round(centreCarats + accentCarats, 2),
     metal: {
       head: { metal: o.headMetal, label: metalLabel(o.headMetal, o.karat), grams: round(gramsOf(headVolume, o.headMetal, o.karat), 2) },
@@ -227,6 +284,7 @@ export function buildRing(input = {}) {
       { cut: o.shape, gem: o.gem, role: 'centre', matrices: stones.centre },
       { cut: 'round-accent', gem: o.accentGem, role: 'accent', matrices: stones.accent },
       { cut: 'princess-accent', gem: o.accentGem, role: 'accent', matrices: stones.channel },
+      { cut: 'round', gem: o.accentGem, role: 'centre', matrices: stones.side },
     ].filter((s) => s.matrices.length),
     specs,
     frame: {
@@ -238,8 +296,8 @@ export function buildRing(input = {}) {
       stone: [L, W],
       // The head's extent, for close views of it.
       headBox: {
-        min: [-(W / 2 + headReach), bandTop - 0.8, -(L / 2 + headReach)],
-        max: [W / 2 + headReach, yGirdle + crownH + (head.prongs ? rp : 0.3), L / 2 + headReach],
+        min: [-(W / 2 + headReach + sideReach), bandTop - 0.8, -(L / 2 + headReach)],
+        max: [W / 2 + headReach + sideReach, yGirdle + crownH + (head.prongs ? rp : 0.3), L / 2 + headReach],
       },
     },
   };
@@ -434,6 +492,8 @@ function paveRows(m, R, shank, phiFrom, out) {
       phis.push(phi);
       phi += pitch / (R + shankShape(shank, phi).t);
     }
+    // No room for stones (a wide head, or arches reaching past the pavé's end): nothing to set.
+    if (!phis.length) continue;
     for (const v of offsets) {
       for (const p of phis) {
         const { w, t } = shankShape(shank, p);

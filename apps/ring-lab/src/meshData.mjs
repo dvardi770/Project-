@@ -9,12 +9,13 @@
  *                      normal as 2 x int16 octahedral encoding.
  *
  * Quantising to 16 bits over a ring part (about 25 mm) keeps positions to under half a micron.
- * The viewer has its own copy of `decodeMesh` (it is a single HTML file); keep them in step.
+ * Decoding lives in configurator/engine/meshDecode.mjs (the 3D pages load it in the browser) and is
+ * re-exported here. The CAD lab viewer (one HTML file) has its own copy; keep them in step.
  */
 import { MeshoptEncoder } from 'meshoptimizer/encoder';
-import { MeshoptDecoder } from 'meshoptimizer/decoder';
+import { VERTEX_SIZE } from '../configurator/engine/meshDecode.mjs';
 
-export const VERTEX_SIZE = 12;
+export { VERTEX_SIZE, decodeMesh } from '../configurator/engine/meshDecode.mjs';
 
 function octEncode(x, y, z) {
   const s = Math.abs(x) + Math.abs(y) + Math.abs(z) || 1;
@@ -25,16 +26,6 @@ function octEncode(x, y, z) {
     v = (1 - Math.abs(pu)) * (pv >= 0 ? 1 : -1);
   }
   return [Math.round(u * 32767), Math.round(v * 32767)];
-}
-
-function octDecode(u, v, out, at) {
-  let x = u / 32767, y = v / 32767;
-  const z = 1 - Math.abs(x) - Math.abs(y);
-  const t = Math.max(-z, 0);
-  x += x >= 0 ? -t : t;
-  y += y >= 0 ? -t : t;
-  const len = Math.hypot(x, y, z) || 1;
-  out[at] = x / len; out[at + 1] = y / len; out[at + 2] = z / len;
 }
 
 /**
@@ -73,24 +64,3 @@ export async function encodeMesh(mesh, ao, push) {
   };
 }
 
-/**
- * @param {object} rec a record written by encodeMesh
- * @param {ArrayBuffer} buffer the whole data buffer
- * @returns {Promise<{ positions: Float32Array, normals: Float32Array, ao: Uint8Array, index: Uint16Array | Uint32Array }>}
- */
-export async function decodeMesh(rec, buffer) {
-  await MeshoptDecoder.ready;
-  const raw = new Uint8Array(rec.v * VERTEX_SIZE);
-  MeshoptDecoder.decodeVertexBuffer(raw, rec.v, VERTEX_SIZE, new Uint8Array(buffer, rec.vb, rec.vbLen));
-  const index = rec.idx32 ? new Uint32Array(rec.i) : new Uint16Array(rec.i);
-  MeshoptDecoder.decodeIndexBuffer(new Uint8Array(index.buffer), rec.i, rec.idx32 ? 4 : 2, new Uint8Array(buffer, rec.ib, rec.ibLen));
-  const view = new DataView(raw.buffer);
-  const positions = new Float32Array(rec.v * 3), normals = new Float32Array(rec.v * 3), ao = new Uint8Array(rec.v);
-  for (let i = 0; i < rec.v; i++) {
-    const o = i * VERTEX_SIZE;
-    for (let k = 0; k < 3; k++) positions[i * 3 + k] = rec.min[k] + (view.getUint16(o + k * 2, true) / 65535) * rec.ext[k];
-    ao[i] = view.getUint8(o + 6);
-    octDecode(view.getInt16(o + 8, true), view.getInt16(o + 10, true), normals, i * 3);
-  }
-  return { positions, normals, ao, index };
-}

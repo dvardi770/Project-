@@ -42,18 +42,41 @@
   .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); background: var(--stage); transition: opacity .4s; }
   .loading[hidden] { display: grid; opacity: 0; pointer-events: none; }
   .tabs { position: sticky; top: calc(61px + var(--stage-h) + env(safe-area-inset-top, 0px)); z-index: 5; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--bg); }
-  .tab { border: 0; background: none; padding: 14px 8px 12px; letter-spacing: .14em; font-size: 13px; text-transform: uppercase; color: var(--faint); cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab { border: 0; background: none; padding: 13px 8px 11px; font-size: 15px; font-weight: 500; color: var(--faint); cursor: pointer; border-bottom: 2px solid transparent; }
   .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
-  .link { width: 54px; height: 34px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); display: grid; place-items: center; cursor: pointer; color: var(--muted); }
+  .link { width: 44px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); display: grid; place-items: center; cursor: pointer; color: var(--muted); }
   .link[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .panel { padding: 14px 16px 22px; }
   .card { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 0 0 12px; }
-  .card h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; display: flex; justify-content: space-between; }
-  .card h2 small { letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--muted); font-size: 13px; }
+  .card h2 { margin: 0 0 10px; font: 400 17px/1.25 Georgia, "Times New Roman", serif; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .card h2 small { font: 400 12.5px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--muted); text-align: right; }
+  .sub { margin-top: 12px; }
+  .sub h3 { margin: 0 0 8px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+  .muted { color: var(--muted); font-size: 12.5px; display: block; }
+  .value { display: block; text-align: center; font-size: 14px; margin-bottom: 4px; }
+  .value.big { font: 400 24px/1.1 Georgia, "Times New Roman", serif; }
+  .width .readout { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; text-align: center; margin-bottom: 6px; }
+  .nudge { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); font-size: 22px; line-height: 1; color: var(--ink); cursor: pointer; }
+  .nudge:active { background: var(--accent-soft); }
+  .ruler { display: flex; justify-content: space-between; padding: 0 6px; font-size: 10.5px; color: var(--faint); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 5px 10px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .chip i { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+  .chip[aria-checked="true"] { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+  .textrow { display: flex; align-items: center; gap: 8px; }
+  .textrow small { color: var(--faint); font-size: 11.5px; flex: none; }
+  .symbols { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .sym { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); font-size: 16px; cursor: pointer; color: var(--ink); }
+  .fonts { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 8px; }
+  .font { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 6px; display: grid; gap: 2px; justify-items: center; cursor: pointer; color: var(--ink); overflow: hidden; }
+  .font .sample { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .font small { color: var(--muted); font-size: 11px; }
+  .font[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .swatch i.none { background: repeating-linear-gradient(135deg, transparent 0 5px, var(--line) 5px 6px); }
   .preview { background: var(--card); border-radius: 12px; display: grid; place-items: center; padding: 14px; margin-bottom: 12px; color: var(--muted); font-size: 12.5px; gap: 6px; }
   .preview svg { width: 120px; height: 64px; }
-  .choices { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
-  .choice { flex: 0 0 auto; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; min-width: 74px; color: var(--muted); font-size: 12px; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+  .choice { border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; min-width: 0; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.2; }
   .choice svg { width: 56px; height: 30px; }
   .choice[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); font-weight: 600; }
   .pills { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -85,9 +108,9 @@
   .breakdown b { display: block; margin-top: 4px; font-weight: 600; }
   .steps { position: sticky; bottom: 0; z-index: 7; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bg); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
   .step { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--faint); cursor: pointer; padding: 2px; }
-  .step i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 11px; background: var(--chip); color: var(--muted); }
+  .step i { width: 34px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-style: normal; color: var(--faint); }
   .step[aria-current="step"] { color: var(--ink); font-weight: 600; }
-  .step[aria-current="step"] i { background: var(--accent); color: #fff; }
+  .step[aria-current="step"] i { background: var(--accent-soft); color: var(--accent); }
   .toast { position: fixed; left: 50%; bottom: 140px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 9; opacity: 0; transition: opacity .25s; pointer-events: none; }
   .toast.show { opacity: 1; }
   /* Short phones: a slimmer price bar leaves more room for the choices. */
@@ -167,11 +190,9 @@
   </section>
 
   <nav class="tabs" role="tablist" aria-label="Which ring">
-    <button class="tab" role="tab" id="tab-her" aria-selected="true" data-ring="her">Her ring</button>
-    <button class="link" id="link" type="button" aria-pressed="true" title="Design both rings together" aria-label="Design both rings together">
-      <svg width="24" height="16" viewBox="0 0 48 32" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="17" cy="16" r="10"/><circle cx="31" cy="16" r="10"/></svg>
-    </button>
-    <button class="tab" role="tab" id="tab-his" aria-selected="false" data-ring="his">His ring</button>
+    <button class="tab" role="tab" id="tab-her" aria-selected="true" data-ring="her">Women's</button>
+    <button class="link" id="link" type="button" aria-pressed="true" title="Design both rings together" aria-label="Design both rings together"></button>
+    <button class="tab" role="tab" id="tab-his" aria-selected="false" data-ring="his">Men's</button>
   </nav>
 
   <div class="scroller" id="scroller">
@@ -179,7 +200,7 @@
 
   <footer class="buy">
     <div class="pair">
-      <div><small>Your pair</small><strong id="total">—</strong><span id="each"></span></div>
+      <div><small>The pair</small><strong id="total">—</strong><span id="each"></span></div>
       <button class="textlink" id="toggle-breakdown" type="button" aria-expanded="false" aria-controls="breakdown">Price breakdown</button>
     </div>
     <div class="breakdown" id="breakdown" hidden></div>
@@ -197,46 +218,73 @@
 } }
 </script>
 <script type="module">
-import { Stage, engravingMaps, ENGRAVING_FONTS } from './engine/stage.mjs';
-import { buildBand, pairLayout, profilePoints, autoThickness, widthName, PROFILES, BAND_SHAPES, LAYOUTS, GROOVES, SETTINGS, EU_SIZES, DEFAULT_BAND } from './engine/band.mjs';
-import { METALS, FINISHES, diameterToUs, euToDiameter } from './engine/materials.mjs';
+import { Stage, engravingMaps, engravingFontReady, ENGRAVING_FONTS } from './engine/stage.mjs';
+import {
+  buildBand, bandOptions, pairLayout, profilePoints, autoThickness, widthName, scatterLayout, PROFILES, BAND_SHAPES, PROPORTIONS, JOINS, GROOVES,
+  EDGES, EDGE_SIDES, ARRANGEMENTS, SET_STYLES, SPANS, SPACINGS, TILTS, SCATTER_PATTERNS, SCATTER_TYPES, STONE_COLOURS, INNER_STONES,
+  ENGRAVING_SIZES, SECTION_KEYS, EU_SIZES, DEFAULT_BAND,
+} from './engine/band.mjs';
+import { METALS, FINISHES, GEMS, diameterToUs, euToDiameter } from './engine/materials.mjs';
+import { gemSwatch } from './engine/icons.mjs';
+import * as icons from './engine/bandIcons.mjs';
 import { priceBand, money } from './engine/pricing.mjs';
 
 const params = new URLSearchParams(location.search);
 if (params.has('embed')) document.documentElement.classList.add('embed');
 
-// Choices for each ring. Linked rings share everything except size, width, diamonds and engraving.
-const PERSONAL = new Set(['size', 'width', 'thickness', 'autoThickness', 'setting', 'stoneSize', 'stonePosition', 'engraving', 'font']);
+const RINGS = { her: "Women's", his: "Men's" };
+// Choices for each ring. Linked rings share the look (profile, metals, finishes, details); each
+// keeps its own size, width, stones and inscription.
+const PERSONAL = new Set(['size', 'width', 'thickness', 'autoThickness', 'arrangement', 'setStyle', 'stoneSize', 'stoneCount', 'span', 'spacing', 'tilt',
+  'stonePosition', 'stoneAngle', 'stoneColour', 'scatterPattern', 'scatterRepeat', 'scatterCount', 'scatterType',
+  'engraving', 'font', 'engravingSize', 'engravingAngle', 'innerStone']);
 const state = {
-  active: 'her', linked: true, step: 1, show: 'both', background: 'white',
-  her: { ...DEFAULT_BAND, width: 3.5, size: 52, layout: 'split', metal: 'yellow', metal2: 'white', finish: 'polished', finish2: 'satin', setting: 'pave-half', stoneSize: 1.1, stonePosition: -0.45 },
-  his: { ...DEFAULT_BAND, width: 5.5, size: 60, layout: 'split', metal: 'yellow', metal2: 'white', finish: 'polished', finish2: 'satin', setting: 'none' },
+  active: 'her', linked: true, step: 1, show: 'both', background: 'white', section: 0,
+  her: { ...DEFAULT_BAND, width: 3.5, size: 52, sections: 2, metal: 'yellow', metal2: 'white', finish: 'polished', finish2: 'satin', arrangement: 'along', setStyle: 'pave', span: 'half', stoneSize: 1.1, stonePosition: -0.45 },
+  his: { ...DEFAULT_BAND, width: 5.5, size: 60, sections: 2, metal: 'yellow', metal2: 'white', finish: 'polished', finish2: 'satin' },
 };
-// A shared link restores a design: #her=<json>&his=<json>.
+// A shared link restores a design: #her=<json>&his=<json> (older links are translated).
 try {
   const h = new URLSearchParams(location.hash.slice(1));
-  for (const r of ['her', 'his']) if (h.get(r)) Object.assign(state[r], JSON.parse(h.get(r)));
+  for (const r of ['her', 'his']) if (h.get(r)) {
+    const saved = JSON.parse(h.get(r));
+    const base = { ...state[r] };
+    // Older links name a layout and a diamond setting instead: let bandOptions translate them.
+    if (saved.sections == null && saved.layout) delete base.sections;
+    if (saved.arrangement == null && saved.setting) delete base.arrangement;
+    Object.assign(state[r], bandOptions({ ...base, ...saved }));
+  }
 } catch { /* an old or edited link: keep the defaults */ }
 
+// Little line icons for the steps.
+const STEP_ICON = {
+  1: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="8"/><ellipse cx="12" cy="12" rx="4.5" ry="4.5"/></svg>',
+  2: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 9l7-5 7 5-7 11z"/><path d="M5 9h14"/></svg>',
+  3: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 5h10l4 5-9 10L3 10z"/><path d="M3 10h18M9 5l3 15 3-15"/></svg>',
+  4: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg>',
+};
 const STEPS = [
-  { n: 1, label: 'Shape & Size', render: stepShape },
-  { n: 2, label: 'Metals & Design', render: stepMetals },
-  { n: 3, label: 'Diamonds', render: stepDiamonds },
-  { n: 4, label: 'Engraving', render: stepEngraving },
+  { n: 1, label: 'Form & fit', render: stepForm },
+  { n: 2, label: 'Metal & finish', render: stepMetal },
+  { n: 3, label: 'Stones', render: stepStones },
+  { n: 4, label: 'Inscription', render: stepInscription },
 ];
 const BACKGROUNDS = { white: { label: 'White', css: '#ffffff' }, ivory: { label: 'Ivory', css: '#f4efe7' }, grey: { label: 'Grey', css: '#e7e7e6' } };
 
 const ring = () => state[state.active];
-function set(key, value) {
+const other = () => state[state.active === 'her' ? 'his' : 'her'];
+function set(key, value, opts) {
   ring()[key] = value;
   if (key === 'width' && ring().autoThickness) ring().thickness = autoThickness(value);
-  if (state.linked && !PERSONAL.has(key)) state[state.active === 'her' ? 'his' : 'her'][key] = value;
-  update();
+  if (state.linked && !PERSONAL.has(key)) other()[key] = value;
+  if (key === 'sections') state.section = Math.min(state.section, value - 1);
+  update(opts);
 }
 
 // ─── Building ──
 let designs = null, prices = null;
-function update({ rebuild = true } = {}) {
+/** Rebuilds the bands; `panel: false` leaves the menu alone (while a slider is being dragged). */
+function update({ rebuild = true, panel = true } = {}) {
   if (rebuild) {
     designs = { her: buildBand(state.her), his: buildBand(state.his) };
     prices = { her: priceBand(designs.her.specs), his: priceBand(designs.his.specs) };
@@ -245,18 +293,25 @@ function update({ rebuild = true } = {}) {
     stage.setDesign({
       groups: which.map((r) => ({
         matrix: state.show === 'both' ? layout[r] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, designs[r].frame.radius, 0, 1],
-        parts: designs[r].parts.map((p) => ({ ...p, maps: p.inner && state[r].engraving.trim() ? engravingMaps({ text: state[r].engraving.trim(), font: state[r].font, width: designs[r].specs.width, circumference: Math.PI * euToDiameter(state[r].size) }) : null })),
+        parts: designs[r].parts.map((p) => ({ ...p, maps: p.inner && state[r].engraving.trim() ? engravingMaps({ text: state[r].engraving.trim(), font: state[r].font, width: designs[r].specs.width, circumference: Math.PI * euToDiameter(state[r].size), angle: Number(state[r].engravingAngle) || 0, scale: ENGRAVING_SIZES[state[r].engravingSize]?.k ?? 1 }) : null })),
         stones: designs[r].stones,
       })),
       frame: { floor: 0, shadowReach: 0.4 },
     });
     groupOf = Object.fromEntries(which.map((r, i) => [r, i]));
   }
-  renderPanel();
+  if (panel) renderPanel();
   renderPrice();
   history.replaceState(null, '', `${location.pathname}${location.search}#${new URLSearchParams({ her: JSON.stringify(state.her), his: JSON.stringify(state.his) })}`);
 }
 let groupOf = {};
+// While dragging, rebuild at most once a frame and keep the menu (and the slider) in place.
+let liveQueued = false;
+function liveBuild() {
+  if (liveQueued) return;
+  liveQueued = true;
+  requestAnimationFrame(() => { liveQueued = false; update({ panel: false }); });
+}
 
 // ─── Controls ──
 const panel = document.getElementById('panel');
@@ -272,15 +327,16 @@ const el = (tag, attrs = {}, ...kids) => {
 };
 function card(title, value, ...body) {
   const id = `c-${Math.random().toString(36).slice(2, 8)}`;
-  return el('section', { class: 'card' }, el('h2', { id }, title, value ? el('small', {}, value) : null), ...body.map((b) => { if (b?.setAttribute && b.getAttribute('role') === 'radiogroup') b.setAttribute('aria-labelledby', id); return b; }));
+  return el('section', { class: 'card' }, el('h2', { id }, el('span', {}, title), value ? el('small', {}, value) : null), ...body.map((b) => { if (b?.setAttribute && b.getAttribute('role') === 'radiogroup') b.setAttribute('aria-labelledby', id); return b; }));
 }
 function radios(className, items, current, onPick, makeItem) {
   const group = el('div', { class: className, role: 'radiogroup' });
   for (const [value, item] of items) {
     const b = makeItem(value, item);
     b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(value === current));
-    b.tabIndex = value === current ? 0 : -1;
+    b.setAttribute('aria-checked', String(String(value) === String(current)));
+    b.dataset.value = String(value);
+    b.tabIndex = String(value) === String(current) ? 0 : -1;
     b.type = 'button';
     b.addEventListener('click', () => onPick(value));
     b.addEventListener('keydown', (e) => {
@@ -296,7 +352,18 @@ function radios(className, items, current, onPick, makeItem) {
   return group;
 }
 const pills = (items, current, key) => radios('pills', items, current, (v) => set(key, v), (v, item) => el('button', { class: 'pill' }, item.label));
-const metalSwatches = (current, key) => radios('swatches', Object.entries(METALS), current, (v) => set(key, v), (v, m) => el('button', { class: 'swatch' }, el('i', { style: `background:radial-gradient(circle at 35% 30%, #fff, ${m.swatch} 55%, ${m.swatch})` }), m.label));
+const tiles = (items, current, onPick, iconOf) => radios('choices', items, current, onPick, (v, item) => el('button', { class: 'choice', html: `${iconOf(v, item)}<span>${item.label}</span>` }));
+const metalSwatches = (current, onPick, list = Object.keys(METALS)) => radios('swatches', list.map((m) => [m, METALS[m]]), current, onPick, (v, m) => el('button', { class: 'swatch' }, el('i', { style: `background:radial-gradient(circle at 35% 30%, #fff, ${m.swatch} 55%, ${m.swatch})` }), m.label));
+const gemSwatches = (list, current, onPick) => radios('swatches', list.map((g) => [g, g === 'none' ? { label: 'None' } : GEMS[g]]), current, onPick, (v, g) => el('button', { class: 'swatch' }, el('i', { class: v === 'none' ? 'none' : '', style: v === 'none' ? '' : `background:${gemSwatch(GEMS[v].swatch)}` }), g.label.replace(' diamond', '').replace('White', 'White diamond')));
+/** A slider that rebuilds live while dragged and refreshes the menu when let go. */
+function slider({ min, max, step, value, label, key, show, ends }) {
+  const out = el('output', { class: 'value' }, show(value));
+  const input = el('input', { type: 'range', min, max, step, value, 'aria-label': label, on: {
+    input: (e) => { ring()[key] = Number(e.target.value); if (state.linked && !PERSONAL.has(key)) other()[key] = ring()[key]; out.textContent = show(ring()[key]); liveBuild(); },
+    change: () => update(),
+  } });
+  return el('div', { class: 'slider' }, out, input, ends ? el('div', { class: 'ends' }, ...ends.map((x) => el('span', {}, x))) : null);
+}
 
 function profileSvg(kind, w = 4, t = autoThickness(4), big = false) {
   const pts = profilePoints(kind, w, t);
@@ -307,101 +374,174 @@ function profileSvg(kind, w = 4, t = autoThickness(4), big = false) {
   return `<svg viewBox="0 0 ${big ? 120 : 56} ${big ? 64 : 30}" aria-hidden="true"><path d="${d}" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
 }
 
-function stepShape() {
+// ─── Step 1: form and fit ──
+function widthControl() {
+  const r = ring();
+  const show = () => { out.textContent = `${r.width.toFixed(1)} mm`; name.textContent = widthName(r.width); range.value = r.width; };
+  const setWidth = (v, final) => {
+    r.width = Math.round(Math.min(10, Math.max(2, v)) * 10) / 10;
+    if (r.autoThickness) r.thickness = autoThickness(r.width);
+    show();
+    if (final) update(); else liveBuild();
+  };
+  const out = el('output', { class: 'value big' });
+  const name = el('span', { class: 'muted' });
+  const range = el('input', { type: 'range', min: 2, max: 10, step: 0.1, value: r.width, 'aria-label': 'Width in millimetres', list: 'width-ticks',
+    on: { input: (e) => setWidth(Number(e.target.value), false), change: () => update() } });
+  const nudge = (d, label, text) => el('button', { class: 'nudge', type: 'button', 'aria-label': label, on: { click: () => setWidth(r.width + d, true) } }, text);
+  const ticks = el('datalist', { id: 'width-ticks' }, ...Array.from({ length: 17 }, (_, i) => el('option', { value: 2 + i * 0.5 })));
+  const ruler = el('div', { class: 'ruler', 'aria-hidden': 'true' }, ...Array.from({ length: 9 }, (_, i) => el('span', {}, String(2 + i))));
+  show();
+  return el('div', { class: 'width' },
+    el('div', { class: 'readout' }, nudge(-0.1, 'Narrower by 0.1 mm', '−'), el('div', {}, out, name), nudge(0.1, 'Wider by 0.1 mm', '+')),
+    range, ticks, ruler);
+}
+
+function stepForm() {
   const r = ring(), d = designs[state.active].specs;
-  const preview = el('div', { class: 'preview', html: `${profileSvg(r.profile, d.width, d.thickness, true)}<div>${PROFILES[r.profile].label} · ${d.width.toFixed(2)} × ${d.thickness.toFixed(2)} mm</div>` });
-  const profiles = radios('choices', Object.entries(PROFILES), r.profile, (v) => set('profile', v), (v, p) => el('button', { class: 'choice', html: `${profileSvg(v)}<span>${p.label}</span>` }));
-  const width = el('input', { type: 'range', min: 2, max: 10, step: 0.1, value: r.width, 'aria-label': 'Width in millimetres', on: { input: (e) => { ring().width = Number(e.target.value); if (ring().autoThickness) ring().thickness = autoThickness(ring().width); if (state.linked) { /* width is personal */ } badge.textContent = `${widthName(ring().width)} ${ring().width.toFixed(2)} mm`; scheduleBuild(); } } });
-  const badge = el('div', { class: 'badge' }, `${widthName(r.width)} ${r.width.toFixed(2)} mm`);
+  const sizes = el('select', { 'aria-label': 'Ring size', on: { change: (e) => set('size', Number(e.target.value)) } }, ...EU_SIZES.map((s) => new Option(`EU ${s} · US ${diameterToUs(euToDiameter(s)).toFixed(1)} · ${euToDiameter(s).toFixed(1)} mm across`, s, false, s === r.size)));
   const auto = el('input', { type: 'checkbox', checked: r.autoThickness, on: { change: (e) => set('autoThickness', e.target.checked) } });
-  const thickness = el('input', { type: 'range', min: 1.2, max: 3, step: 0.05, value: d.thickness, disabled: r.autoThickness, 'aria-label': 'Thickness in millimetres', on: { input: (e) => { ring().thickness = Number(e.target.value); scheduleBuild(); } } });
-  const sizes = el('select', { 'aria-label': 'Ring size', on: { change: (e) => set('size', Number(e.target.value)) } }, ...EU_SIZES.map((s) => new Option(`EU ${s} · US ${diameterToUs(euToDiameter(s)).toFixed(1)} · ${euToDiameter(s).toFixed(1)} mm`, s, false, s === r.size)));
+  const preview = el('div', { class: 'preview', html: `${profileSvg(r.profile, d.width, d.thickness, true)}<div>${PROFILES[r.profile].label} · ${d.width.toFixed(1)} × ${d.thickness.toFixed(2)} mm</div>` });
   return [
-    card('Profile', PROFILES[r.profile].label, preview, profiles),
-    card('Width', `${widthName(r.width)}`, el('div', { class: 'slider', style: 'text-align:center' }, badge, width, el('div', { class: 'ends' }, el('span', {}, 'Thin'), el('span', {}, 'Bold'))),
-      el('label', { class: 'toggle' }, auto, 'Auto-match thickness to width'),
-      el('div', { class: 'slider' }, el('div', { class: 'ends' }, el('span', {}, `Thickness ${d.thickness.toFixed(2)} mm`)), thickness)),
-    card('Shape', BAND_SHAPES[r.shape].label, pills(Object.entries(BAND_SHAPES), r.shape, 'shape')),
     card('Ring size', `EU ${r.size}`, sizes),
+    card('Width', `${r.width.toFixed(1)} mm`, widthControl()),
+    card('Profile', PROFILES[r.profile].label, preview, tiles(Object.entries(PROFILES), r.profile, (v) => set('profile', v), (v) => profileSvg(v))),
+    card('Outline', BAND_SHAPES[r.shape].label, tiles(Object.entries(BAND_SHAPES), r.shape, (v) => set('shape', v), (v) => icons.outlineIcon(v))),
+    card('Thickness', `${d.thickness.toFixed(2)} mm`,
+      el('label', { class: 'toggle' }, auto, 'Match thickness to width'),
+      r.autoThickness ? null : slider({ min: 1.2, max: 3, step: 0.05, value: d.thickness, label: 'Thickness in millimetres', key: 'thickness', show: (v) => `${Number(v).toFixed(2)} mm`, ends: ['Fine', 'Sturdy'] })),
   ];
 }
 
-function stepMetals() {
+// ─── Step 2: metal and finish ──
+const sectionColours = (r) => Array.from({ length: r.sections }, (_, i) => METALS[r[SECTION_KEYS[i][0]]].swatch);
+function stepMetal() {
   const r = ring();
+  const i = Math.min(state.section, r.sections - 1);
+  const [metalKey, finishKey] = SECTION_KEYS[i];
   const out = [
-    card('Metal', METALS[r.metal].label, metalSwatches(r.metal, 'metal'), el('div', { style: 'height:10px' }), pills([['14k', { label: '14k gold' }], ['18k', { label: '18k gold' }]], r.karat, 'karat')),
-    card('Design', LAYOUTS[r.layout].label, radios('choices', Object.entries(LAYOUTS), r.layout, (v) => set('layout', v), (v, l) => el('button', { class: 'choice', html: `${layoutSvg(v, r)}<span>${l.label}</span>` }))),
+    card('Gold purity', r.karat === '18k' ? '18 karat' : '14 karat', pills([['14k', { label: '14 karat' }], ['18k', { label: '18 karat' }]], r.karat, 'karat'),
+      el('p', { class: 'note' }, 'Platinum is always 950.')),
+    card('Sections', r.sections === 1 ? 'One metal' : `${r.sections} sections`,
+      tiles([1, 2, 3, 4, 5].map((n) => [n, { label: n === 1 ? 'One' : String(n) }]), r.sections, (v) => set('sections', v), (v) => icons.sectionsIcon(Array.from({ length: v }, (_, k) => METALS[r[SECTION_KEYS[k][0]]].swatch), r.proportion)),
+      r.sections > 1 ? el('div', { class: 'sub' }, el('h3', {}, 'Proportion'), tiles(Object.entries(PROPORTIONS), r.proportion, (v) => set('proportion', v), (v) => icons.sectionsIcon(sectionColours(r), v))) : null),
   ];
-  if (r.layout !== 'single') out.push(card('Second metal', METALS[r.metal2].label, metalSwatches(r.metal2, 'metal2')));
-  out.push(card(r.layout === 'single' ? 'Finish' : `Finish: ${METALS[r.metal].label.toLowerCase()}`, FINISHES[r.finish].label, pills(Object.entries(FINISHES), r.finish, 'finish')));
-  if (r.layout !== 'single' && r.layout !== 'inside') out.push(card(`Finish: ${METALS[r.metal2].label.toLowerCase()}`, FINISHES[r.finish2].label, pills(Object.entries(FINISHES), r.finish2, 'finish2')));
-  out.push(card('Grooves', GROOVES[r.grooves].label, pills(Object.entries(GROOVES), r.grooves, 'grooves')));
+  const chips = r.sections > 1 ? radios('chips', Array.from({ length: r.sections }, (_, k) => [k, { label: `Section ${k + 1}` }]), i, (v) => { state.section = v; update({ rebuild: false }); },
+    (v, c) => el('button', { class: 'chip' }, el('i', { style: `background:${METALS[r[SECTION_KEYS[v][0]]].swatch}` }), c.label)) : null;
+  out.push(card(r.sections > 1 ? 'Colour and finish' : 'Colour', `${METALS[r[metalKey]].label} · ${FINISHES[r[finishKey]].label}`,
+    chips, metalSwatches(r[metalKey], (v) => set(metalKey, v)),
+    el('div', { class: 'sub' }, el('h3', {}, 'Finish'), tiles(Object.entries(FINISHES), r[finishKey], (v) => set(finishKey, v), (v) => icons.finishIcon(v)))));
+  if (r.sections > 1) out.push(card('Where sections meet', JOINS[r.join].label, tiles(Object.entries(JOINS), r.join, (v) => set('join', v), (v) => icons.joinIcon(v))));
+  out.push(card('Edges', EDGES[r.edge].label, tiles(Object.entries(EDGES), r.edge, (v) => set('edge', v), (v) => icons.edgeIcon(v)),
+    r.edge !== 'none' ? el('div', { class: 'sub' }, el('h3', {}, 'On'), tiles(Object.entries(EDGE_SIDES), r.edgeSide, (v) => set('edgeSide', v), (v) => icons.edgeSideIcon(v))) : null));
+  out.push(card('Lines round the band', GROOVES[r.grooves].label, tiles(Object.entries(GROOVES), r.grooves, (v) => set('grooves', v), (v) => icons.groovesIcon(v))));
+  const polished = el('input', { type: 'checkbox', checked: r.insidePolished, on: { change: (e) => set('insidePolished', e.target.checked) } });
+  const lining = el('input', { type: 'checkbox', checked: r.lining, on: { change: (e) => set('lining', e.target.checked) } });
+  out.push(card('Inside', r.lining ? `Lined in ${METALS[r.liningMetal].label.toLowerCase()}` : r.insidePolished ? 'Polished' : 'As the outside',
+    el('label', { class: 'toggle' }, polished, 'Polish the inside'),
+    el('label', { class: 'toggle' }, lining, 'Line the inside with another metal'),
+    r.lining ? metalSwatches(r.liningMetal, (v) => set('liningMetal', v)) : null));
   return out;
 }
 
-function layoutSvg(layout, r) {
-  const a = METALS[r.metal].swatch, b = METALS[r.metal2].swatch;
-  const zones = { single: [[0, 1, a]], split: [[0, 0.5, a], [0.5, 1, b]], stripe: [[0, 0.33, a], [0.33, 0.67, b], [0.67, 1, a]], edges: [[0, 0.17, b], [0.17, 0.83, a], [0.83, 1, b]], inside: [[0, 1, a]] }[layout];
-  const rects = zones.map(([x0, x1, c]) => `<rect x="${4 + x0 * 48}" y="6" width="${(x1 - x0) * 48}" height="${layout === 'inside' ? 13 : 18}" fill="${c}"/>`).join('');
-  const lining = layout === 'inside' ? `<rect x="4" y="19" width="48" height="5" fill="${b}"/>` : '';
-  return `<svg viewBox="0 0 56 30" aria-hidden="true"><g>${rects}${lining}</g><rect x="4" y="6" width="48" height="18" rx="3" fill="none" stroke="rgba(0,0,0,.18)"/></svg>`;
-}
-
-function stepDiamonds() {
+// ─── Step 3: stones ──
+function stepStones() {
   const r = ring();
-  const out = [card('Diamonds', SETTINGS[r.setting].label, pills(Object.entries(SETTINGS), r.setting, 'setting'))];
-  if (r.setting !== 'none') {
-    const size = el('input', { type: 'range', min: 1, max: 3, step: 0.05, value: r.stoneSize, 'aria-label': 'Stone size in millimetres', on: { input: (e) => { ring().stoneSize = Number(e.target.value); scheduleBuild(); } } });
-    const pos = el('input', { type: 'range', min: -1, max: 1, step: 0.05, value: r.stonePosition, 'aria-label': 'Position across the band', on: { input: (e) => { ring().stonePosition = Number(e.target.value); scheduleBuild(); } } });
-    const s = designs[state.active].specs.stones;
-    out.push(card('Stone size', `${r.stoneSize.toFixed(2)} mm · ${s.count} × = ${s.carats.toFixed(2)} ct`, size));
-    out.push(card('Position', r.stonePosition < -0.15 ? 'Towards one edge' : r.stonePosition > 0.15 ? 'Towards the other edge' : 'Centre', pos,
-      el('div', { class: 'slider' }, el('div', { class: 'ends' }, el('span', {}, 'Edge'), el('span', {}, 'Centre'), el('span', {}, 'Edge')))));
+  const s = designs[state.active].specs.stones;
+  const out = [card('Arrangement', ARRANGEMENTS[r.arrangement].label, tiles(Object.entries(ARRANGEMENTS), r.arrangement, (v) => set('arrangement', v), (v) => icons.arrangementIcon(v)))];
+  if (r.arrangement === 'none') return out;
+  const angle = () => slider({ min: -180, max: 180, step: 1, value: r.stoneAngle, label: 'Placement round the ring in degrees', key: 'stoneAngle', show: (v) => (Number(v) === 0 ? 'On top' : `${Number(v) > 0 ? '+' : ''}${v}°`), ends: ['−180°', 'Top', '+180°'] });
+  const across = () => slider({ min: -1, max: 1, step: 0.05, value: r.stonePosition, label: 'Position across the band', key: 'stonePosition', show: (v) => (Math.abs(v) < 0.15 ? 'Centred' : Number(v) < 0 ? 'Towards the left edge' : 'Towards the right edge'), ends: ['Left edge', 'Centre', 'Right edge'] });
+  const beads = r.arrangement === 'scatter' && r.scatterType === 'beads';
+  if (!beads) out.push(card('Stone colour', GEMS[r.stoneColour].label, gemSwatches(STONE_COLOURS, r.stoneColour, (v) => set('stoneColour', v))));
+  out.push(card(beads ? 'Bead size' : 'Stone size', `${r.stoneSize.toFixed(2)} mm${beads ? '' : ` · ${s.count} × ${s.count ? (s.carats / s.count).toFixed(3) : 0} ct = ${s.carats.toFixed(2)} ct`}`,
+    slider({ min: 0.8, max: 3.5, step: 0.05, value: r.stoneSize, label: 'Stone size in millimetres', key: 'stoneSize', show: (v) => `${Number(v).toFixed(2)} mm`, ends: ['Fine', 'Bold'] })));
+  if (r.arrangement === 'along') {
+    out.push(card('Setting', SET_STYLES[r.setStyle].label, tiles(Object.entries(SET_STYLES), r.setStyle, (v) => set('setStyle', v), (v) => icons.setStyleIcon(v))));
+    out.push(card('How far round', SPANS[r.span].label, tiles(Object.entries(SPANS), r.span, (v) => set('span', v), (v, x) => icons.spanIcon(x.f))));
+    out.push(card('Spacing', SPACINGS[r.spacing].label, tiles(Object.entries(SPACINGS), r.spacing, (v) => set('spacing', v), (v) => icons.spacingIcon(v))));
+    out.push(card('Across the band', null, across()));
+    if (r.span !== 'full') out.push(card('Round the ring', null, angle()));
+  } else if (r.arrangement === 'across') {
+    out.push(card('Stones in the row', String(r.stoneCount), pills([1, 2, 3, 4, 5, 6, 7].map((n) => [n, { label: String(n) }]), r.stoneCount, 'stoneCount')));
+    out.push(card('Direction', TILTS[r.tilt].label, tiles(Object.entries(TILTS), r.tilt, (v) => set('tilt', v), (v) => icons.tiltIcon(v))));
+    out.push(card('Spacing', SPACINGS[r.spacing].label, tiles(Object.entries(SPACINGS), r.spacing, (v) => set('spacing', v), (v) => icons.spacingIcon(v))));
+    out.push(card('Round the ring', null, angle()));
+  } else if (r.arrangement === 'scatter') {
+    const w = designs[state.active].specs.width;
+    out.push(card('Pattern', SCATTER_PATTERNS[r.scatterPattern].label, tiles(Object.entries(SCATTER_PATTERNS), r.scatterPattern, (v) => set('scatterPattern', v), (v) => icons.scatterIcon(scatterLayout(v, 7, 1.3, 4, 16), 16, 4))));
+    out.push(card('Stones', SCATTER_TYPES[r.scatterType].label, pills(Object.entries(SCATTER_TYPES), r.scatterType, 'scatterType')));
+    out.push(card('In each group', `${r.scatterCount}`, slider({ min: 3, max: 15, step: 1, value: r.scatterCount, label: 'Stones in each group', key: 'scatterCount', show: (v) => `${v} stones`, ends: ['Few', 'Many'] })));
+    out.push(card('Groups round the ring', String(r.scatterRepeat), pills(Array.from({ length: 8 }, (_, k) => [k + 1, { label: String(k + 1) }]), r.scatterRepeat, 'scatterRepeat'), el('p', { class: 'note' }, `Each group is about ${(Math.PI * (euToDiameter(r.size) + 2 * designs[state.active].specs.thickness) / Math.max(1, r.scatterRepeat) * 0.82).toFixed(0)} mm long on this ${w.toFixed(1)} mm band.`)));
+    out.push(card('Round the ring', null, angle()));
+  } else {
+    if (r.arrangement === 'tension') out.push(card('Direction', TILTS[r.tilt].label, tiles(Object.entries(TILTS), r.tilt, (v) => set('tilt', v), (v) => icons.tiltIcon(v))));
+    out.push(card('Across the band', null, across()));
+    out.push(card('Round the ring', null, angle()));
   }
   return out;
 }
 
-function stepEngraving() {
+// ─── Step 4: inscription ──
+const SYMBOLS = ['♥', '♡', '∞', '★', '✦', '✧', '☾', '☀', '♪', '✿', '❀', '☘', '⚓', '✝', '♛', '✉', '☯', '➳'];
+function stepInscription() {
   const r = ring();
-  const input = el('input', { type: 'text', maxlength: 24, value: r.engraving, placeholder: 'For example: Always · 14.06.2027', 'aria-label': 'Engraving text', on: { input: (e) => { ring().engraving = e.target.value; scheduleBuild(450); } } });
+  engravingFontReady(r.font).then((ok) => { if (ok && state.step === 4) update({ panel: false }); });
+  const input = el('input', { type: 'text', maxlength: 30, value: r.engraving, placeholder: 'For example: Always yours · 14.06.2027', 'aria-label': 'Engraving text',
+    on: { input: (e) => { ring().engraving = e.target.value; count.textContent = `${e.target.value.length}/30`; scheduleBuild(350, { panel: false }); } } });
+  const count = el('small', {}, `${r.engraving.length}/30`);
+  const symbols = el('div', { class: 'symbols', role: 'group', 'aria-label': 'Add a symbol' }, ...SYMBOLS.map((sym) => el('button', { type: 'button', class: 'sym', 'aria-label': `Add ${sym}`, on: { click: () => {
+    if (r.engraving.length >= 30) return;
+    const at = input.selectionStart ?? r.engraving.length;
+    ring().engraving = r.engraving.slice(0, at) + sym + r.engraving.slice(at);
+    update();
+  } } }, sym)));
+  const fonts = radios('fonts', Object.entries(ENGRAVING_FONTS), r.font, (v) => { set('font', v); engravingFontReady(v).then(() => update({ panel: false })); },
+    (v, f) => el('button', { class: 'font' }, el('span', { class: 'sample', style: `font:${f.css.replace('{px}', 19)}` }, r.engraving.trim().slice(0, 12) || 'Forever'), el('small', {}, f.label)));
   return [
-    card('Engraving', `${r.engraving.length}/24`, input, el('p', { class: 'note' }, 'Engraved inside the band. The view turns to show it.')),
-    card('Lettering', ENGRAVING_FONTS[r.font].label, radios('pills', Object.entries(ENGRAVING_FONTS), r.font, (v) => set('font', v), (v, f) => el('button', { class: 'pill', style: `font:${f.css.replace('{px}', 14)}` }, f.label))),
+    card('Inscription', null, el('div', { class: 'textrow' }, input, count), symbols, el('p', { class: 'note' }, 'Engraved inside the band. The view turns to show it.')),
+    card('Lettering', ENGRAVING_FONTS[r.font].label, fonts),
+    card('Letter size', ENGRAVING_SIZES[r.engravingSize].label, pills(Object.entries(ENGRAVING_SIZES), r.engravingSize, 'engravingSize')),
+    card('Where inside', null, slider({ min: -180, max: 180, step: 5, value: r.engravingAngle, label: 'Where the inscription sits inside, in degrees', key: 'engravingAngle', show: (v) => (Number(v) === 0 ? 'Under the top' : `${Number(v) > 0 ? '+' : ''}${v}°`), ends: ['−180°', 'Centre', '+180°'] })),
+    card('Hidden stone', r.innerStone === 'none' ? 'None' : GEMS[r.innerStone].label, gemSwatches(INNER_STONES, r.innerStone, (v) => set('innerStone', v)), el('p', { class: 'note' }, 'A small stone set inside the band, beside the inscription: only the wearer knows.')),
   ];
 }
 
 function renderPanel() {
   const step = STEPS[state.step - 1];
   const focusValue = document.activeElement?.closest?.('.panel') ? document.activeElement : null;
-  const restore = focusValue ? { label: focusValue.closest('[role="radiogroup"]')?.previousElementSibling?.textContent, text: focusValue.textContent, aria: focusValue.getAttribute('aria-label') } : null;
+  const restore = focusValue ? { group: focusValue.closest('[role="radiogroup"]')?.getAttribute('aria-labelledby') && focusValue.closest('.card')?.querySelector('h2 span')?.textContent, value: focusValue.dataset?.value, aria: focusValue.getAttribute('aria-label') } : null;
   panel.replaceChildren(...step.render());
   if (restore) {
-    const match = [...panel.querySelectorAll('button, input, select')].find((b) => (restore.aria && b.getAttribute('aria-label') === restore.aria) || (b.textContent === restore.text && b.getAttribute('aria-checked') === 'true'));
+    const match = [...panel.querySelectorAll('button, input, select')].find((b) => (restore.aria && b.getAttribute('aria-label') === restore.aria)
+      || (restore.value != null && b.dataset.value === restore.value && b.closest('.card')?.querySelector('h2 span')?.textContent === restore.group));
     match?.focus({ preventScroll: true });
   }
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.ring === state.active));
-  document.getElementById('link').setAttribute('aria-pressed', String(state.linked));
+  const link = document.getElementById('link');
+  link.setAttribute('aria-pressed', String(state.linked));
+  link.innerHTML = icons.linkIcon(state.linked);
   const steps = document.getElementById('steps');
-  steps.replaceChildren(...STEPS.map((s) => el('button', { class: 'step', type: 'button', 'aria-current': s.n === state.step ? 'step' : false, on: { click: () => goStep(s.n) } }, el('i', {}, String(s.n)), s.label)));
+  steps.replaceChildren(...STEPS.map((s) => el('button', { class: 'step', type: 'button', 'aria-current': s.n === state.step ? 'step' : false, on: { click: () => goStep(s.n) } }, el('i', { html: STEP_ICON[s.n] }), s.label)));
   const next = STEPS[state.step];
-  document.getElementById('next').textContent = next ? `Continue to ${next.label}` : 'Add pair to cart';
+  document.getElementById('next').textContent = next ? `Next: ${next.label}` : 'Add the pair to cart';
 }
 
 function renderPrice() {
   const total = prices.her.total + prices.his.total;
   document.getElementById('total').textContent = money(total);
-  document.getElementById('each').textContent = `Her ${money(prices.her.total)} · His ${money(prices.his.total)}`;
+  document.getElementById('each').textContent = `${RINGS.her} ${money(prices.her.total)} · ${RINGS.his} ${money(prices.his.total)}`;
   const bd = document.getElementById('breakdown');
   bd.replaceChildren(...['her', 'his'].flatMap((r) => [
-    el('b', {}, r === 'her' ? `Her ring · ${designs.her.specs.grams.toFixed(1)} g` : `His ring · ${designs.his.specs.grams.toFixed(1)} g`),
+    el('b', {}, `${RINGS[r]} ring · ${designs[r].specs.grams.toFixed(1)} g`),
     ...prices[r].lines.map((l) => el('div', {}, el('span', {}, l.label), el('span', {}, money(l.amount)))),
   ]));
 }
 
 let buildTimer = null;
-function scheduleBuild(delay = 60) {
+function scheduleBuild(delay = 60, opts) {
   clearTimeout(buildTimer);
-  buildTimer = setTimeout(() => { update(); }, delay);
+  buildTimer = setTimeout(() => { update(opts); }, delay);
 }
 
 function focusRing(r, view = 'ring') {
@@ -436,7 +576,7 @@ document.getElementById('link').addEventListener('click', () => {
   // Linking copies the shared choices of the ring being designed onto the other one.
   if (state.linked) { const other = state.active === 'her' ? 'his' : 'her'; for (const k of Object.keys(DEFAULT_BAND)) if (!PERSONAL.has(k)) state[other][k] = ring()[k]; }
   update();
-  toast(state.linked ? 'Both rings change together' : 'Rings change separately');
+  toast(state.linked ? 'Both rings share their look' : 'Each ring is designed on its own');
 });
 document.getElementById('next').addEventListener('click', () => {
   if (state.step < 4) {
@@ -482,7 +622,9 @@ document.getElementById('zoom').addEventListener('input', (e) => stage.zoomTo(Nu
 let stage;
 try {
   // The page itself does not scroll (only the menu does), so a drag on the 3D only turns the rings.
-  stage = new Stage(document.getElementById('stage'), { background: '#ffffff', rotateSpeed: 2.4, touchScroll: false });
+  // A soft studio (smooth reflections on the wide polished surfaces of bands) and a deeper,
+  // warmer yellow gold.
+  stage = new Stage(document.getElementById('stage'), { background: '#ffffff', rotateSpeed: 2.4, touchScroll: false, studio: 'soft', metalTones: { yellow: [0.93, 0.62, 0.26] } });
 } catch (e) {
   document.getElementById('loading').textContent = 'This browser cannot show 3D. Try a recent Chrome, Safari or Firefox.';
   throw e;

@@ -192,7 +192,7 @@ console.log('band builder');
   await test('linked rings share design choices but not sizes', async () => {
     await p.getByRole('radio', { name: 'Dome' }).click();
     assert.equal(await p.evaluate(() => window.bandBuilder.state.his.profile), 'dome');
-    await p.getByRole('tab', { name: 'His ring' }).click();
+    await p.getByRole('tab', { name: "Men's" }).click();
     await p.getByLabel('Ring size').selectOption('64');
     assert.equal(await p.evaluate(() => window.bandBuilder.state.her.size), 52);
     await p.getByRole('button', { name: 'Design both rings together' }).click();
@@ -202,13 +202,27 @@ console.log('band builder');
     assert.equal(await p.evaluate(() => window.bandBuilder.state.his.profile), 'flat');
   });
 
-  await test('steps lead to engraving, which is priced', async () => {
-    await p.getByRole('button', { name: 'Continue to Metals & Design' }).click();
+  await test('width moves in steps of 0.1 mm', async () => {
+    const before = await p.evaluate(() => window.bandBuilder.state.his.width);
+    await p.getByRole('button', { name: 'Wider by 0.1 mm' }).click();
+    await p.getByRole('button', { name: 'Wider by 0.1 mm' }).click();
+    await p.getByRole('button', { name: 'Narrower by 0.1 mm' }).click();
+    assert.equal(await p.evaluate(() => window.bandBuilder.state.his.width), Math.round((before + 0.1) * 10) / 10);
+  });
+
+  await test('steps lead to the inscription, which is priced', async () => {
+    await p.getByRole('button', { name: 'Next: Metal & finish' }).click();
     await p.getByRole('radio', { name: 'Hammered' }).first().click();
-    await p.getByRole('button', { name: 'Continue to Diamonds' }).click();
-    await p.getByRole('radio', { name: 'Channel, all round' }).click();
+    await p.getByRole('radio', { name: '3', exact: true }).click();
+    assert.equal(await p.evaluate(() => window.bandBuilder.designs.his.specs.sections), 3);
+    await p.getByRole('radio', { name: 'Milgrain' }).click();
+    assert.equal(await p.evaluate(() => window.bandBuilder.state.his.edge), 'milgrain');
+    await p.getByRole('button', { name: 'Next: Stones' }).click();
+    await p.getByRole('radio', { name: 'Row along' }).click();
+    await p.getByRole('radio', { name: 'Channel' }).click();
+    await p.getByRole('radio', { name: 'All round' }).click();
     assert.ok(await p.evaluate(() => window.bandBuilder.designs.his.specs.stones.count) > 20);
-    await p.getByRole('button', { name: 'Continue to Engraving' }).click();
+    await p.getByRole('button', { name: 'Next: Inscription' }).click();
     await p.getByLabel('Engraving text').fill('Always');
     await p.waitForFunction(() => window.bandBuilder.designs.his.specs.engraving === 'Always');
     assert.ok(await p.evaluate(() => window.bandBuilder.prices.his.lines.some((l) => l.key === 'engraving')));

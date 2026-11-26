@@ -173,7 +173,7 @@
 import { Stage } from './engine/stage.mjs';
 import { buildRing, HEADS, SHANKS, CARATS, RING_SIZES, DEFAULT_RING } from './engine/ring.mjs';
 import { SHAPES } from './engine/cuts.mjs';
-import { GEMS, METALS, metalLabel, usToDiameter } from './engine/materials.mjs';
+import { GEMS, METALS, RING_METALS, metalLabel, usToDiameter } from './engine/materials.mjs';
 import { priceRing, money } from './engine/pricing.mjs';
 import { shapeIcon, caratIcon, HEAD_ICONS, SHANK_ICONS, gemSwatch } from './engine/icons.mjs';
 
@@ -195,8 +195,8 @@ const sections = [
   { key: 'gem', title: 'Centre stone', view: 'top', kind: 'swatch', options: () => Object.entries(GEMS).map(([value, g]) => ({ value, label: g.label, swatch: gemSwatch(g.swatch) })) },
   { key: 'head', title: 'Head', view: 'head', options: () => Object.entries(HEADS).map(([value, h]) => ({ value, label: h.label, icon: HEAD_ICONS[value] })) },
   { key: 'shank', title: 'Shank', view: 'shank', options: () => Object.entries(SHANKS).map(([value, s]) => ({ value, label: s.label, icon: SHANK_ICONS[value] })) },
-  { key: 'shankMetal', title: 'Shank metal', view: 'overview', kind: 'swatch', options: () => Object.entries(METALS).map(([value, m]) => ({ value, label: m.label, swatch: m.swatch })) },
-  { key: 'headMetal', title: 'Head metal', view: 'head', kind: 'swatch', options: () => Object.entries(METALS).map(([value, m]) => ({ value, label: m.label, swatch: m.swatch })) },
+  { key: 'shankMetal', title: 'Shank metal', view: 'overview', kind: 'swatch', options: () => RING_METALS.map((value) => ({ value, label: METALS[value].label, swatch: METALS[value].swatch })) },
+  { key: 'headMetal', title: 'Head metal', view: 'head', kind: 'swatch', options: () => RING_METALS.map((value) => ({ value, label: METALS[value].label, swatch: METALS[value].swatch })) },
   { key: 'karat', title: 'Gold', kind: 'chips', options: () => [{ value: '14k', label: '14k gold' }, { value: '18k', label: '18k gold' }], shown: (v) => `${v} gold`, note: 'Platinum is 950 platinum.' },
   { key: 'accentGem', title: 'Accent stones', view: 'head', kind: 'swatch', options: () => ['diamond', 'lab', 'sapphire', 'ruby', 'emerald', 'pinkdiamond', 'yellowsapphire', 'tanzanite'].map((value) => ({ value, label: GEMS[value].label, swatch: gemSwatch(GEMS[value].swatch) })), hidden: () => !design || design.specs.accents.count === 0 },
   { key: 'size', title: 'Ring size', kind: 'select', options: () => RING_SIZES.map((s) => ({ value: s, label: `US ${s} · ${usToDiameter(s).toFixed(1)} mm` })), shown: (v) => `US ${v}` },
@@ -266,14 +266,14 @@ function renderOptions() {
 }
 
 function choose(sec, value) {
-  if (state[sec.key] === value) { if (sec.view) stage?.focus(sec.view); return; }
+  // The view stays where the shopper left it: a choice changes the ring, not the camera.
+  if (state[sec.key] === value) return;
   const focusKey = document.activeElement?.closest?.('.choice') ? `${sec.key}:${value}` : null;
   state[sec.key] = value;
   // A new shank metal brings the head with it unless the shopper chose a different head metal.
   if (sec.key === 'shankMetal' && !headMetalChosen) state.headMetal = value;
   if (sec.key === 'headMetal') headMetalChosen = true;
   update();
-  if (sec.view) stage.focus(sec.view);
   if (focusKey) {
     const [key, v] = [sec.key, String(value)];
     optionsEl.querySelector(`[aria-labelledby="h-${key}"] [data-value="${CSS.escape(v)}"]`)?.focus({ preventScroll: true });

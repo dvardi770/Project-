@@ -221,8 +221,26 @@ class Pass {
  * polished contrast (never black, so no turn of the ring shows black metal); stones get a
  * darker, contrasty set, since dark areas are what make a diamond sparkle.
  */
-function studioMaps(renderer) {
+/** A tile whose edges fade out, for softboxes with soft edges. */
+function featherTexture() {
+  const n = 64, data = new Uint8Array(n * n * 4);
+  const f = (u) => { const a = Math.min(u, 1 - u) / 0.38; return a >= 1 ? 1 : a * a * (3 - 2 * a); };
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const v = Math.round(255 * f((x + 0.5) / n) * f((y + 0.5) / n));
+    data.set([v, v, v, 255], (y * n + x) * 4);
+  }
+  const t = new THREE.DataTexture(data, n, n);
+  t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
+  return t;
+}
+
+/**
+ * The studio as seen in reflections. soft: softboxes with feathered edges, so polished bands
+ * show smooth gradients rather than hard light stripes.
+ */
+function studioMaps(renderer, { soft = false } = {}) {
   const scene = new THREE.Scene();
+  const feather = soft ? featherTexture() : null;
   const dome = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false,
     uniforms: { top: { value: 1 }, mid: { value: 0.3 }, low: { value: 0.1 } },
@@ -233,7 +251,9 @@ function studioMaps(renderer) {
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(60, 48, 24), dome));
   const boxes = [];
   const box = (w, h, x, y, z, round = false) => {
-    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+    // Soft boxes are larger, their edges fading out, so the light they give stays the same.
+    const k = feather && !round ? 1.35 : 1;
+    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w * k, h * k), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, map: round ? null : feather }));
     m.position.set(x, y, z);
     m.lookAt(0, 0, 0);
     scene.add(m);
@@ -255,13 +275,16 @@ function studioMaps(renderer) {
     new THREE.CubeCamera(0.5, 200, rt).update(renderer, scene);
     return rt;
   };
-  const metalCube = make({ top: 1.3, mid: 0.58, low: 0.72, keys: [2.8, 5.2, 4.4, 2.2, 3.6, 2.4], spark: 7, flag: 0.2, size: 512 });
+  const metalCube = soft
+    ? make({ top: 1.35, mid: 0.62, low: 0.74, keys: [2.6, 4.6, 4.0, 2.2, 3.3, 2.3], spark: 5, flag: 0.3, size: 512 })
+    : make({ top: 1.3, mid: 0.58, low: 0.72, keys: [2.8, 5.2, 4.4, 2.2, 3.6, 2.4], spark: 7, flag: 0.2, size: 512 });
   const stoneCube = make({ top: 0.75, mid: 0.17, low: 0.05, keys: [3.4, 7.5, 6.0, 2.4, 4.5, 3.0], spark: 16, flag: 0.0, size: 512 });
   const pmrem = new THREE.PMREMGenerator(renderer);
   const metal = pmrem.fromCubemap(metalCube.texture).texture;
   pmrem.dispose();
   metalCube.dispose();
   scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+  feather?.dispose();
   return { metal, stones: stoneCube.texture };
 }
 
@@ -317,10 +340,47 @@ function finishMap(kind) {
     const r = rng(3);
     const lines = Array.from({ length: 256 }, () => r());
     t = normalTexture(256, (x, y) => lines[Math.floor(y * 256)] * 0.5 + Math.sin(x * 6.283 * 3 + y * 40) * 0.02, 1.2);
+  } else if (kind === 'crossbrush') {
+    // Brush lines across the band, from edge to edge.
+    const r = rng(5);
+    const lines = Array.from({ length: 256 }, () => r());
+    t = normalTexture(256, (x, y) => lines[Math.floor(x * 256)] * 0.5 + Math.sin(y * 6.283 * 3 + x * 40) * 0.02, 1.2);
   } else if (kind === 'matte') {
     const r = rng(11);
     const n = Array.from({ length: 128 * 128 }, () => r());
     t = normalTexture(128, (x, y) => n[Math.floor(y * 128) * 128 + Math.floor(x * 128)], 0.5);
+  } else if (kind === 'sand') {
+    // Sandblasted: a fine, even grain.
+    const r = rng(13);
+    const n = Array.from({ length: 256 * 256 }, () => r());
+    t = normalTexture(256, (x, y) => n[Math.floor(y * 256) * 256 + Math.floor(x * 256)], 0.9);
+  } else if (kind === 'frost') {
+    // Frost: tiny facets cut at random angles, each catching the light on its own.
+    const r = rng(17);
+    const cells = Array.from({ length: 220 }, () => ({ x: r(), y: r(), a: (r() - 0.5) * 2, b: (r() - 0.5) * 2 }));
+    t = normalTexture(256, (x, y) => {
+      let best = 9, c = cells[0];
+      for (const q of cells) for (const ox of [-1, 0, 1]) for (const oy of [-1, 0, 1]) {
+        const dd = (x - q.x - ox) ** 2 + (y - q.y - oy) ** 2;
+        if (dd < best) { best = dd; c = q; }
+      }
+      return c.a * x + c.b * y;
+    }, 18);
+  } else if (kind === 'florentine') {
+    // Florentine: fine engraved lines crossing each other.
+    const line = (v) => { const f = v - Math.floor(v); return Math.max(0, 1 - Math.abs(f - 0.5) / 0.12); };
+    t = normalTexture(256, (x, y) => -0.6 * Math.max(line(x * 22), line(y * 22)), 2.2);
+  } else if (kind === 'bark') {
+    // Bark: irregular ridges running round the band, like a branch.
+    const r = rng(23);
+    const n = Array.from({ length: 64 * 64 }, () => r());
+    const at = (i, j) => n[((j + 64) % 64) * 64 + ((i + 64) % 64)];
+    const value = (x, y) => {
+      const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+      const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+      return (at(i, j) * (1 - sx) + at(i + 1, j) * sx) * (1 - sy) + (at(i, j + 1) * (1 - sx) + at(i + 1, j + 1) * sx) * sy;
+    };
+    t = normalTexture(256, (x, y) => value(x * 4, y * 32) * 0.7 + value(x * 8, y * 64) * 0.3, 3.2);
   }
   finishMaps.set(kind, t);
   return t;
@@ -367,7 +427,7 @@ export class Stage {
     controls.addEventListener('end', () => { this.interacting = false; this.lastInput = performance.now(); });
     controls.addEventListener('change', () => { this.moved = true; });
 
-    this.maps = studioMaps(renderer);
+    this.maps = studioMaps(renderer, { soft: this.options.studio === 'soft' });
     // The turntable turns the ring and its shadow under fixed lights and camera, as on a
     // photographer's turntable (the 360° video); the root holds the design.
     this.turntable = new THREE.Group();
@@ -442,7 +502,7 @@ export class Stage {
 
   metalMaterial(metal, finish = 'polished', extra = null, uvSize = null) {
     // Finish textures tile at a real size: brush lines and grain small, hammer dents larger.
-    const tileMm = { satin: 4, matte: 3, hammered: 11 }[finish];
+    const tileMm = { satin: 4, crossbrush: 4, matte: 3, sand: 2, frost: 2.5, hammered: 11, florentine: 3, bark: 8 }[finish];
     const repeat = uvSize && tileMm ? [Math.max(1, Math.round(uvSize[0] / tileMm)), Math.max(0.25, uvSize[1] / tileMm)] : null;
     const key = `${metal}|${finish}|${extra?.id ?? ''}|${repeat ? repeat.map((x) => x.toFixed(2)).join('x') : ''}`;
     if (this.metalMaterials.has(key)) return this.metalMaterials.get(key);
@@ -451,14 +511,16 @@ export class Stage {
     const m = new (brushed ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial)({
       metalness: 1, roughness: f.roughness, envMap: this.maps.metal, envMapIntensity: 1,
     });
-    m.color.setRGB(...METALS[metal].f0, THREE.LinearSRGBColorSpace);
+    m.color.setRGB(...(this.options.metalTones?.[metal] ?? METALS[metal].f0), THREE.LinearSRGBColorSpace);
+    // A soft studio: polish keeps a little more bloom in its reflections, as on a real band.
+    if (this.options.studio === 'soft' && finish === 'polished') m.roughness = 0.09;
     // Brushed and matte metal scatter the studio's light: a touch less bright than polish.
-    if (finish === 'satin' || finish === 'matte') m.envMapIntensity = 0.8;
+    if (['satin', 'crossbrush', 'matte', 'sand'].includes(finish)) m.envMapIntensity = 0.8;
     let map = finishMap(finish);
     if (map && repeat) { map = map.clone(); map.repeat.set(repeat[0], repeat[1]); map.needsUpdate = true; }
-    const strength = { hammered: 1.6, satin: 0.14, matte: 0.3 }[finish] ?? 0.3;
+    const strength = { hammered: 1.6, satin: 0.14, crossbrush: 0.14, matte: 0.3, sand: 0.45, frost: 0.9, florentine: 0.7, bark: 1.1 }[finish] ?? 0.3;
     if (map) { m.normalMap = map; m.normalScale.set(strength, strength); }
-    if (brushed) { m.anisotropy = 0.85; m.anisotropyRotation = 0; }
+    if (brushed) { m.anisotropy = 0.85; m.anisotropyRotation = f.across ? Math.PI / 2 : 0; }
     if (extra?.normalMap) {
       // Engraving: its own relief, darker and rougher in the letters.
       m.normalMap = extra.normalMap; m.normalScale.set(1, 1);
@@ -729,11 +791,15 @@ export class Stage {
     for (const m of built.meshes) box.expandByObject(m);
     const hb = frame?.headBox;
     const headBox = hb ? new THREE.Box3(new THREE.Vector3(...hb.min), new THREE.Vector3(...hb.max)) : box;
-    const [polar, azimuth, fitBox, margin] = { head: [64, 24, headBox, 0.84], shank: [62, 40, box, 0.92], top: [14, 0, headBox, 0.84] }[view] ?? [70, 32, box, 0.92];
+    const [polar, azimuth, fitBox, margin] = { head: [64, 24, headBox, 0.84], shank: [62, 40, box, 1.12], top: [14, 0, headBox, 0.84] }[view] ?? [70, 32, box, 0.92];
     const target = fitBox.getCenter(new THREE.Vector3());
     const dist = this.distanceToFit(fitBox, target, polar, azimuth, margin, t.camera);
     t.camera.position.setFromSpherical(new THREE.Spherical(dist, (polar * Math.PI) / 180, (azimuth * Math.PI) / 180)).add(target);
     t.camera.lookAt(target);
+    // Near and far planes round the ring, wherever the camera ended up.
+    const reach = box.getBoundingSphere(new THREE.Sphere()).radius + box.getCenter(new THREE.Vector3()).distanceTo(target);
+    t.camera.near = Math.max(0.05, dist - reach * 2); t.camera.far = dist + reach * 2;
+    t.camera.updateProjectionMatrix();
     this.setGemMode(-1, 0);
     const aoWas = this.aoUniforms.aoAmount.value;
     this.aoUniforms.aoAmount.value = 0;
@@ -846,7 +912,9 @@ export class Stage {
 
   /** Camera distance at which every corner of `box` is inside `margin` of the frame. */
   distanceToFit(box, target, polar, azimuth, margin, camera = this.camera) {
+    // A copy that sees any distance: the search below must not stop at the camera's far plane.
     const cam = camera.clone();
+    cam.near = 0.01; cam.far = 1e6; cam.updateProjectionMatrix();
     const corners = [];
     for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
     const dir = new THREE.Vector3().setFromSpherical(new THREE.Spherical(1, (polar * Math.PI) / 180, (azimuth * Math.PI) / 180));
@@ -1128,11 +1196,42 @@ function stoneGeometry(key) {
 // ─── Engraving ──────────────────────────────────────────────────────────────
 
 export const ENGRAVING_FONTS = {
-  serif: { label: 'Classic', css: 'italic 400 {px}px Georgia, "Times New Roman", serif' },
-  script: { label: 'Script', css: '400 {px}px "Snell Roundhand", "Apple Chancery", "URW Chancery L", "Brush Script MT", cursive' },
-  sans: { label: 'Modern', css: '500 {px}px "Helvetica Neue", Arial, sans-serif' },
-  block: { label: 'Block', css: '700 {px}px "Arial Black", "Helvetica Neue", Arial, sans-serif' },
+  serif:       { label: 'Classic', css: 'italic 400 {px}px Georgia, "Times New Roman", serif' },
+  roman:       { label: 'Roman', css: '600 {px}px "Cinzel", Georgia, serif', google: 'Cinzel:wght@600' },
+  garamond:    { label: 'Garamond', css: 'italic 500 {px}px "Cormorant Garamond", Georgia, serif', google: 'Cormorant+Garamond:ital,wght@1,500' },
+  calligraphy: { label: 'Calligraphy', css: '400 {px}px "Great Vibes", cursive', google: 'Great+Vibes' },
+  romance:     { label: 'Romance', css: '400 {px}px "Parisienne", cursive', google: 'Parisienne' },
+  copperplate: { label: 'Copperplate', css: '400 {px}px "Pinyon Script", cursive', google: 'Pinyon+Script' },
+  script:      { label: 'Script', css: '400 {px}px "Snell Roundhand", "Apple Chancery", "URW Chancery L", "Brush Script MT", cursive' },
+  handwritten: { label: 'Handwritten', css: '500 {px}px "Caveat", cursive', google: 'Caveat:wght@500' },
+  elegant:     { label: 'Elegant', css: 'italic 500 {px}px "Playfair Display", Georgia, serif', google: 'Playfair+Display:ital,wght@1,500' },
+  deco:        { label: 'Art deco', css: '400 {px}px "Poiret One", sans-serif', google: 'Poiret+One' },
+  sans:        { label: 'Modern', css: '500 {px}px "Jost", "Helvetica Neue", Arial, sans-serif', google: 'Jost:wght@500' },
+  typewriter:  { label: 'Typewriter', css: '400 {px}px "Courier Prime", "Courier New", monospace', google: 'Courier+Prime' },
+  gothic:      { label: 'Gothic', css: '700 {px}px "UnifrakturCook", "Old English Text MT", serif', google: 'UnifrakturCook:wght@700' },
+  block:       { label: 'Block', css: '700 {px}px "Arial Black", "Helvetica Neue", Arial, sans-serif' },
 };
+
+let fontsLinked = false;
+/**
+ * Makes an engraving font ready to draw: links the web fonts once, then waits for this one.
+ * Resolves true when it is loaded (false if it cannot be, e.g. offline: a fallback is drawn).
+ */
+export function engravingFontReady(font) {
+  const f = ENGRAVING_FONTS[font] ?? ENGRAVING_FONTS.serif;
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve(false);
+  if (!fontsLinked) {
+    fontsLinked = true;
+    const families = Object.values(ENGRAVING_FONTS).filter((x) => x.google).map((x) => `family=${x.google}`).join('&');
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+    document.head.append(link);
+  }
+  if (!f.google) return Promise.resolve(true);
+  const css = f.css.replace('{px}', 40);
+  return document.fonts.load(css).then((list) => list.length > 0 || document.fonts.check(css)).catch(() => false);
+}
 
 const engravingCache = new Map();
 /**
@@ -1140,8 +1239,11 @@ const engravingCache = new Map();
  * rougher than the polish round them. The inside's uv runs round the band (u) and across it (v);
  * the text is centred at u = 0.5, the bottom of the ring as it stands.
  */
-export function engravingMaps({ text, font = 'serif', width, circumference }) {
-  const id = `${text}|${font}|${width.toFixed(2)}|${circumference.toFixed(1)}`;
+export function engravingMaps({ text, font = 'serif', width, circumference, angle = 0, scale = 1 }) {
+  const css = (ENGRAVING_FONTS[font] ?? ENGRAVING_FONTS.serif).css;
+  // Drawn again once a web font arrives.
+  const ready = typeof document !== 'undefined' && document.fonts?.check ? document.fonts.check(css.replace('{px}', 40)) : true;
+  const id = `${text}|${font}|${width.toFixed(2)}|${circumference.toFixed(1)}|${angle}|${scale}|${ready}`;
   if (engravingCache.has(id)) return engravingCache.get(id);
   const pxPerMm = 40;
   const W = Math.min(4096, Math.round(circumference * pxPerMm)), H = Math.max(32, Math.round(width * pxPerMm));
@@ -1150,16 +1252,20 @@ export function engravingMaps({ text, font = 'serif', width, circumference }) {
   const g = c.getContext('2d');
   g.fillStyle = '#000';
   g.fillRect(0, 0, W, H);
-  const size = Math.round(H * 0.5);
-  g.font = (ENGRAVING_FONTS[font] ?? ENGRAVING_FONTS.serif).css.replace('{px}', size);
+  const size = Math.round(H * 0.5 * scale);
+  g.font = css.replace('{px}', size);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = '#fff';
   // Seen from above, looking into the ring, the inside's u runs right to left and its v upwards:
-  // turn the text half round so it reads the right way up.
-  g.translate(W / 2, H / 2);
-  g.rotate(Math.PI);
-  g.fillText(text, 0, 0, W * 0.45);
+  // turn the text half round so it reads the right way up. Its middle sits `angle` degrees
+  // round from the bottom of the ring (u = 0.5), drawn twice so it can run across the seam.
+  const centre = W * (0.5 + (((angle % 360) + 360) % 360) / 360);
+  for (const x of [centre - W, centre]) {
+    g.setTransform(1, 0, 0, 1, x, H / 2);
+    g.rotate(Math.PI);
+    g.fillText(text, 0, 0, W * 0.45);
+  }
   g.setTransform(1, 0, 0, 1, 0, 0);
   const src = g.getImageData(0, 0, W, H).data;
   // Soften the letter walls a little (a 3×3 average) so the relief looks cut, not stamped.

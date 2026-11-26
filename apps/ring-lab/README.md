@@ -11,7 +11,8 @@ for a pair of rings.
   oval, cushion and pear brilliants with excellent proportions (table 56%, crown 34.5°, pavilion
   40.75°, 8 bezel, 8 star, 16 upper-half, 8 main and 16 lower-half facets, faceted girdle), an
   emerald step cut, princess and marquise. Sizes come from carats: a 1 ct round is 6.4 mm, a 1 ct
-  oval 7.7 × 5.6 mm, as real stones are (weights use each gem's density). Accent stones use a
+  oval 7.7 × 5.6 mm, as real stones are (weights use each gem's density). A radiant is a brilliant
+  on a cut-cornered rectangle; an asscher a square step cut with deep corners. Accent stones use a
   simpler cut with 33 facets, since they are a few pixels across.
 - **Ring parts** (`engine/ring.mjs`, `engine/geometry.mjs`): heads are prongs swept along curves
   round the stone's outline, with basket rails; halos of small stones set tight round the centre
@@ -22,18 +23,32 @@ for a pair of rings.
   are arches that leave the band and rise to the basket, open underneath. Channel stones sit in a
   groove cut along the band, tables just below the walls that hold them (bands too). Every combination builds in 10–40 ms. Metal
   weight comes from the closed meshes' volume (a typical ring: 2.5–3.5 g), carats from each stone.
-- **Bands** (`engine/band.mjs`): eight profiles, width 2–10 mm, thickness matched to width or set,
-  seven outer shapes (oval, cushion, hexagon, octagon, wave, wavy…), one or two metals (halves,
-  centre stripe, edges, inside), a finish per metal, grooves, diamonds (flush solitaire or three,
-  channel or pavé line, half or all round) and engraving inside. Weights use the cross-section's
-  area (Pappus): a 4 mm 14k band is about 5 g.
+- **Bands** (`engine/band.mjs`):
+  - Form: ten profiles (including concave and stepped), width 2–10 mm in 0.1 mm steps, thickness
+    matched to width or set, eight outlines (soft square, cushion, octagon, hexagon, oval, twist,
+    ripple).
+  - Metal: one to five sections across the band in even, wide-middle or slim-middle proportions,
+    each with its own metal (yellow, white, rose, red, black gold, platinum) and finish (high polish,
+    satin and cross brush, matte, sandblast, frost, hammered, Florentine, bark); seamless, fine-line,
+    V-groove or raised joins; chamfer, shoulder, edge-line, milgrain or rope edges on either or both
+    sides; decorative lines; a polished or matching inside, or a lining in another metal.
+  - Stones: single, trio, a row across (straight or slanting), a row along (pavé, channel or flush;
+    a quarter to all the way round; touching to spread), a raised collet, a tension slot, or a
+    scatter (six patterns, repeated round the ring, in stones, gold beads or both), in nine colours,
+    placed across and round the band.
+  - Inscription inside in 14 typefaces (web fonts load when chosen), three sizes, placed anywhere
+    round the inside, with symbols, and an optional hidden stone beside it.
+  - Weights use the cross-section's area (Pappus), less the metal cut away for channels and slots:
+    a 4 mm 14k band is about 5 g. Older shared links (layouts and diamond settings) still open.
 - **Stage** (`engine/stage.mjs`), built for 60 frames per second on phones:
   - Stones are traced through their own facet planes in the shader, with Fresnel reflection at each
     facet and up to 7 bounces. While the ring turns, fire is added where light leaves the stone (one
     trace instead of three); when it stops, the picture is refined over 14 steps, each tracing red,
     green and blue separately at slightly varied refractive indices, with sub-pixel offsets.
   - Metal: physically based, in a studio of softboxes rendered once into an environment map;
-    polished, satin (anisotropic), matte and hammered finishes at real scale.
+    finishes as normal maps at real scale (brushed ones anisotropic). The band builder uses a soft
+    studio (feathered softboxes) so wide polished surfaces show smooth gradients, and a deeper
+    yellow gold (`metalTones`).
   - Ambient occlusion baked per vertex on the GPU each time the design changes: the design is
     seen from 64 directions and each metal vertex counts how much of the studio it can see, so
     crevices under the basket, between prongs and halo stones and inside the band are shaded as in
@@ -43,10 +58,11 @@ for a pair of rings.
     tone mapping (made for product colours); 4× multisampling.
   - The resolution adapts to keep frames near 16 ms, rendering stops when nothing changes or the
     stage is off screen, and shaders for every cut are compiled in the background.
-  - Views move smoothly to what a choice changes (head, top, side, the inside for engraving).
-    Engraving is drawn into relief, colour and roughness maps on the band's inside.
-- **Pages**: `ring-builder.html` and `band-builder.html`, mobile first (stage on top, choices
-  below, price bar at the bottom), with live thumbnails of heads and shanks, a price breakdown,
+  - In the ring builder the view stays where the shopper left it when a choice changes; the band
+    builder turns to the inside for the inscription. Engraving is drawn into relief, colour and
+    roughness maps on the band's inside.
+- **Pages**: `ring-builder.html` and `band-builder.html`, mobile first (on phones the 3D is pinned
+  at the top and only the menu scrolls), with live thumbnails of heads and shanks, a price breakdown,
   total carats and grams, share links, `?embed`, `?stats` (frames per second), and add-to-cart events
   for the store page. `engine/pricing.mjs` holds the sample price list.
 

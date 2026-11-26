@@ -6,7 +6,7 @@
  * Everything here is plain math (no three.js), so it runs in Node for tests and in the browser.
  * Cuts are made at a width of 1 and scaled to the stone's millimetres by the caller.
  *
- * Axes: x across the stone, z along it (oval, pear, emerald and marquise are longer in z),
+ * Axes: x across the stone, z along it (oval, pear, emerald, radiant and marquise are longer in z),
  * y up through the table. The girdle's middle is at y = 0.
  */
 
@@ -124,6 +124,11 @@ const OUTLINES = {
     const c = Math.cos(t), s = Math.sin(t);
     return [0.5 * Math.sign(c) * Math.abs(c) ** (2 / n), 0.5 * r * Math.sign(s) * Math.abs(s) ** (2 / n)];
   }, r),
+  // A rectangle with its corners cut off, as a radiant is outlined (a square one at r = 1).
+  radiant: (r = 1.2, corner = 0.17) => {
+    const edges = cutCorners(0.5, 0.5 * r, corner);
+    return outline((t) => octagonAt(edges, t).p, r);
+  },
   // Pointed at both ends: x = ½(1 − (z/b)²), a lens.
   marquise: (r = 2.0) => outline((t) => [0.5 * Math.sin(t) * Math.abs(Math.sin(t)), 0.5 * r * Math.cos(t)], r),
   // Round at −z, pointed at +z; widest nearer the round end, as a pear is.
@@ -203,11 +208,7 @@ function brilliant(shape, o = {}) {
 /** An emerald (step) cut: an octagon with three rows of steps on the crown and on the pavilion. */
 function stepCut(o = {}) {
   const { ratio = 1.42, corner = 0.13, table = 0.62, girdle = 0.03 } = o;
-  const a = 0.5, b = 0.5 * ratio, c = corner;
-  const edges = [
-    { n: [1, 0], D: a }, { n: [-1, 0], D: a }, { n: [0, 1], D: b }, { n: [0, -1], D: b },
-    ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([sx, sz]) => ({ n: [sx / Math.SQRT2, sz / Math.SQRT2], D: (a + b - c) / Math.SQRT2 })),
-  ];
+  const edges = cutCorners(0.5, 0.5 * ratio, corner);
   const yG = girdle / 2;
   const planes = [];
   for (const e of edges) planes.push({ n: [e.n[0], 0, e.n[1]], d: e.D, tag: 'girdle' });
@@ -246,6 +247,14 @@ function stepCut(o = {}) {
   return { planes, ratio, outline: line };
 }
 
+/** The eight edges of a rectangle (half-sizes a, b) with corners cut back by c. */
+function cutCorners(a, b, c) {
+  return [
+    { n: [1, 0], D: a }, { n: [-1, 0], D: a }, { n: [0, 1], D: b }, { n: [0, -1], D: b },
+    ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([sx, sz]) => ({ n: [sx / Math.SQRT2, sz / Math.SQRT2], D: (a + b - c) / Math.SQRT2 })),
+  ];
+}
+
 /** Point and outward direction on the octagon where a ray from the centre at angle t leaves it. */
 function octagonAt(edges, t) {
   const dir = [Math.cos(t), Math.sin(t)];
@@ -268,6 +277,10 @@ export const SHAPES = {
   pear: { label: 'Pear', make: () => brilliant('pear', { ratio: 1.55, table: 0.57, girdleFacets: 40 }) },
   princess: { label: 'Princess', make: () => brilliant('princess', { ratio: 1, table: 0.66, crown: 32, pavilion: 41, girdleFacets: 32 }) },
   marquise: { label: 'Marquise', make: () => brilliant('marquise', { ratio: 2.0, table: 0.56, girdleFacets: 40 }) },
+  // Brilliant facets on a cut-cornered rectangle: an emerald's outline with a princess's fire.
+  radiant: { label: 'Radiant', make: () => brilliant('radiant', { ratio: 1.2, table: 0.56, crown: 35, pavilion: 40.5, girdleFacets: 32 }) },
+  // A square step cut with deep corners and a small table, its steps seen as concentric squares.
+  asscher: { label: 'Asscher', make: () => stepCut({ ratio: 1, corner: 0.24, table: 0.54 }) },
 };
 
 /** Cuts for small accent stones: fewer facets (they are a few pixels across), so cheaper to trace. */

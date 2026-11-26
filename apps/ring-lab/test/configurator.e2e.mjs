@@ -68,17 +68,40 @@ const drawnShare = (p, api) => p.evaluate(async (apiName) => {
 }, api);
 
 
-/** Swipes a finger up the middle of the 3D stage; returns how far the page scrolled. */
-async function swipeUpOnStage(p) {
-  const box = await p.locator('#stage canvas').boundingBox();
-  const x = box.x + box.width / 2, y0 = box.y + box.height * 0.75, y1 = box.y + box.height * 0.15;
-  const before = await p.evaluate(() => scrollY);
+/** Swipes a finger up the middle of an element; returns how far the page and the menu scrolled. */
+async function swipeUp(p, selector, menu) {
+  const box = await p.locator(selector).first().boundingBox();
+  const x = box.x + box.width / 2, y0 = box.y + box.height * 0.8, y1 = box.y + box.height * 0.2;
+  const where = () => p.evaluate((m) => ({ page: scrollY, menu: document.querySelector(m).scrollTop, stage: document.querySelector('.stage-wrap').getBoundingClientRect().top }), menu);
+  const before = await where();
   const cdp = await p.context().newCDPSession(p);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
   for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 + ((y1 - y0) * i) / 10 }] });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await p.waitForTimeout(400);
-  return (await p.evaluate(() => scrollY)) - before;
+  await p.waitForTimeout(500);
+  const after = await where();
+  return { page: after.page - before.page, menu: after.menu - before.menu, stage: after.stage - before.stage };
+}
+
+/** On a phone the builder is one screen: the 3D stays at the top and only the menu scrolls. */
+async function phoneScreenTests(p, menu) {
+  await test('the page itself does not scroll', async () => {
+    assert.ok(await p.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1));
+  });
+  await test('a swipe on the menu scrolls only the menu; the 3D stays put', async () => {
+    const moved = await swipeUp(p, menu, menu);
+    assert.ok(moved.menu > 50, `menu scrolled ${moved.menu} px`);
+    assert.equal(moved.page, 0);
+    assert.equal(moved.stage, 0);
+  });
+  await test('a drag on the 3D turns it and scrolls nothing', async () => {
+    const moved = await swipeUp(p, '#stage canvas', menu);
+    assert.deepEqual(moved, { page: 0, menu: 0, stage: 0 });
+  });
+  await test('leaves room for the menu', async () => {
+    const room = await p.evaluate((m) => document.querySelector(m).getBoundingClientRect().height, menu);
+    assert.ok(room > 200, `${room} px for the menu`);
+  });
 }
 
 console.log('ring builder');
@@ -150,17 +173,7 @@ console.log('ring builder on a phone');
   await test('fits the screen without scrolling sideways', async () => {
     assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
   });
-  await test('a swipe up over the 3D scrolls the page', async () => {
-    const moved = await swipeUpOnStage(p);
-    assert.ok(moved > 50, `page scrolled ${moved} px`);
-  });
-  await test('leaves room for the choices between the 3D and the price bar', async () => {
-    const room = await p.evaluate(() => {
-      const top = Math.max(...[...document.querySelectorAll('.stage-wrap, .tabs')].map((e) => e.getBoundingClientRect().bottom));
-      return document.querySelector('.buy').getBoundingClientRect().top - top;
-    });
-    assert.ok(room > 150, `${room} px for the choices`);
-  });
+  await phoneScreenTests(p, '.panel');
   if (shots) await p.screenshot({ path: join(shots, 'ring-builder-phone.png') });
   await test('no errors on the page', async () => assert.deepEqual(errors, []));
   await p.close();
@@ -223,17 +236,7 @@ console.log('band builder on a phone');
   await test('fits the screen without scrolling sideways', async () => {
     assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
   });
-  await test('a swipe up over the 3D scrolls the page', async () => {
-    const moved = await swipeUpOnStage(p);
-    assert.ok(moved > 50, `page scrolled ${moved} px`);
-  });
-  await test('leaves room for the choices between the 3D and the price bar', async () => {
-    const room = await p.evaluate(() => {
-      const top = Math.max(...[...document.querySelectorAll('.stage-wrap, .tabs')].map((e) => e.getBoundingClientRect().bottom));
-      return document.querySelector('.buy').getBoundingClientRect().top - top;
-    });
-    assert.ok(room > 150, `${room} px for the choices`);
-  });
+  await phoneScreenTests(p, '.scroller');
   if (shots) await p.screenshot({ path: join(shots, 'band-builder-phone.png') });
   await test('no errors on the page', async () => assert.deepEqual(errors, []));
   await p.close();

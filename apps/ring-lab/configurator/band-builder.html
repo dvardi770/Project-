@@ -97,6 +97,29 @@
   .embed .bar { display: none; }
   .embed .stage-wrap { top: 0; }
   .embed .tabs { top: var(--stage-h); }
+  /* The menu and the price bar: one scrolling area on phones; on wider screens they keep their own places. */
+  .scroller { display: contents; }
+  /* Phones, like a native app: the rings stay put at the top under the header, only the menu
+     scrolls (the price and Continue at its end, as on a phone app), and the steps stay at the
+     bottom. The page itself never scrolls. */
+  @media (max-width: 959px) {
+    html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+    .app { --stage-h: clamp(250px, 41vh, 480px); box-sizing: border-box; height: 100vh; height: 100dvh; min-height: 0; padding-top: env(safe-area-inset-top, 0px); grid-template-rows: auto auto minmax(0, 1fr) auto; }
+    @supports (height: 1svh) { .app { --stage-h: clamp(250px, 41svh, 480px); } }
+    .embed { --stage-h: clamp(200px, 36vh, 420px); }
+    /* The 3D starts under the header, on the same background, so the bands never run into it. */
+    #stage { top: 56px; }
+    .embed #stage { top: 0; }
+    .bar { grid-row: 1; grid-column: 1; align-self: start; position: relative; top: auto; z-index: 8; background: transparent; border-bottom: 0; pointer-events: none; }
+    .bar > * { pointer-events: auto; }
+    .stage-wrap { grid-row: 1; grid-column: 1; position: relative; top: auto; }
+    .tools, .settings { top: 64px; }
+    .embed .tools, .embed .settings { top: 12px; }
+    .tabs { grid-row: 2; position: relative; top: auto; }
+    .scroller { display: block; grid-row: 3; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+    .buy { position: relative; bottom: auto; border-top: 0; padding-bottom: 16px; }
+    .steps { grid-row: 4; position: relative; }
+  }
   @media (min-width: 960px) {
     .app { grid-template-columns: minmax(0, 1fr) 460px; grid-template-rows: auto auto 1fr auto auto; }
     .bar { grid-column: 1 / -1; }
@@ -151,6 +174,7 @@
     <button class="tab" role="tab" id="tab-his" aria-selected="false" data-ring="his">His ring</button>
   </nav>
 
+  <div class="scroller" id="scroller">
   <main class="panel" id="panel" role="tabpanel" aria-live="polite"></main>
 
   <footer class="buy">
@@ -161,6 +185,7 @@
     <div class="breakdown" id="breakdown" hidden></div>
     <button class="primary" id="next" type="button">Continue</button>
   </footer>
+  </div>
   <nav class="steps" aria-label="Steps" id="steps"></nav>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -414,7 +439,13 @@ document.getElementById('link').addEventListener('click', () => {
   toast(state.linked ? 'Both rings change together' : 'Rings change separately');
 });
 document.getElementById('next').addEventListener('click', () => {
-  if (state.step < 4) { goStep(state.step + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  if (state.step < 4) {
+    goStep(state.step + 1);
+    // Back to the top of the menu: on phones it scrolls by itself, on wider screens the page does.
+    document.getElementById('scroller').scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
   const detail = { type: 'band-builder:add-to-cart', her: { design: state.her, specs: designs.her.specs, price: prices.her }, his: { design: state.his, specs: designs.his.specs, price: prices.his } };
   window.dispatchEvent(new CustomEvent('band-builder:add-to-cart', { detail }));
   if (window.parent !== window) window.parent.postMessage(detail, '*');
@@ -450,7 +481,8 @@ document.getElementById('zoom').addEventListener('input', (e) => stage.zoomTo(Nu
 // ─── Start ──
 let stage;
 try {
-  stage = new Stage(document.getElementById('stage'), { background: '#ffffff', rotateSpeed: 2.4 });
+  // The page itself does not scroll (only the menu does), so a drag on the 3D only turns the rings.
+  stage = new Stage(document.getElementById('stage'), { background: '#ffffff', rotateSpeed: 2.4, touchScroll: false });
 } catch (e) {
   document.getElementById('loading').textContent = 'This browser cannot show 3D. Try a recent Chrome, Safari or Firefox.';
   throw e;

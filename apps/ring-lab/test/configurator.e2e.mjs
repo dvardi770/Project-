@@ -37,8 +37,8 @@ async function test(name, fn) {
   try { await fn(); console.log(`  ✓ ${name}`); } catch (e) { failures++; console.log(`  ✗ ${name}\n    ${e.message}`); }
 }
 
-async function open(page, { width = 1280, height = 800 } = {}) {
-  const p = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+async function open(page, { width = 1280, height = 800, touch = false } = {}) {
+  const p = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1, ...(touch ? { isMobile: true, hasTouch: true } : {}) });
   await p.route(/^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+?)@[^/]+\/(.*)$/, (route) => {
     const [, name, file] = route.request().url().match(/^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+?)@[^/]+\/(.*)$/);
     try { route.fulfill({ status: 200, contentType: 'text/javascript', body: readFileSync(join(modules, name, file)) }); } catch { route.abort(); }
@@ -66,6 +66,43 @@ const drawnShare = (p, api) => p.evaluate(async (apiName) => {
   for (let i = 0; i < d.length; i += 4) if (d[i] < 235 || d[i + 1] < 235 || d[i + 2] < 235) drawn++;
   return drawn / (d.length / 4);
 }, api);
+
+
+/** Swipes a finger up the middle of an element; returns how far the page and the menu scrolled. */
+async function swipeUp(p, selector, menu) {
+  const box = await p.locator(selector).first().boundingBox();
+  const x = box.x + box.width / 2, y0 = box.y + box.height * 0.8, y1 = box.y + box.height * 0.2;
+  const where = () => p.evaluate((m) => ({ page: scrollY, menu: document.querySelector(m).scrollTop, stage: document.querySelector('.stage-wrap').getBoundingClientRect().top }), menu);
+  const before = await where();
+  const cdp = await p.context().newCDPSession(p);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
+  for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 + ((y1 - y0) * i) / 10 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await p.waitForTimeout(500);
+  const after = await where();
+  return { page: after.page - before.page, menu: after.menu - before.menu, stage: after.stage - before.stage };
+}
+
+/** On a phone the builder is one screen: the 3D stays at the top and only the menu scrolls. */
+async function phoneScreenTests(p, menu) {
+  await test('the page itself does not scroll', async () => {
+    assert.ok(await p.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1));
+  });
+  await test('a swipe on the menu scrolls only the menu; the 3D stays put', async () => {
+    const moved = await swipeUp(p, menu, menu);
+    assert.ok(moved.menu > 50, `menu scrolled ${moved.menu} px`);
+    assert.equal(moved.page, 0);
+    assert.equal(moved.stage, 0);
+  });
+  await test('a drag on the 3D turns it and scrolls nothing', async () => {
+    const moved = await swipeUp(p, '#stage canvas', menu);
+    assert.deepEqual(moved, { page: 0, menu: 0, stage: 0 });
+  });
+  await test('leaves room for the menu', async () => {
+    const room = await p.evaluate((m) => document.querySelector(m).getBoundingClientRect().height, menu);
+    assert.ok(room > 200, `${room} px for the menu`);
+  });
+}
 
 console.log('ring builder');
 {
@@ -132,10 +169,11 @@ console.log('ring builder');
 
 console.log('ring builder on a phone');
 {
-  const { p, errors } = await open('ring-builder.html', { width: 390, height: 844 });
+  const { p, errors } = await open('ring-builder.html', { width: 375, height: 667, touch: true });
   await test('fits the screen without scrolling sideways', async () => {
     assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
   });
+  await phoneScreenTests(p, '.panel');
   if (shots) await p.screenshot({ path: join(shots, 'ring-builder-phone.png') });
   await test('no errors on the page', async () => assert.deepEqual(errors, []));
   await p.close();
@@ -194,10 +232,11 @@ console.log('band builder');
 
 console.log('band builder on a phone');
 {
-  const { p, errors } = await open('band-builder.html', { width: 390, height: 844 });
+  const { p, errors } = await open('band-builder.html', { width: 375, height: 667, touch: true });
   await test('fits the screen without scrolling sideways', async () => {
     assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
   });
+  await phoneScreenTests(p, '.scroller');
   if (shots) await p.screenshot({ path: join(shots, 'band-builder-phone.png') });
   await test('no errors on the page', async () => assert.deepEqual(errors, []));
   await p.close();

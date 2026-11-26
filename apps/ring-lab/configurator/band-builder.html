@@ -99,22 +99,22 @@
   .embed .tabs { top: var(--stage-h); }
   /* The menu and the price bar: one scrolling area on phones; on wider screens they keep their own places. */
   .scroller { display: contents; }
-  /* Phones, like a native app: the rings stay put at the top under the header, only the menu
-     scrolls (the price and Continue at its end, as on a phone app), and the steps stay at the
-     bottom. The page itself never scrolls. */
+  /* Phones, like a native app: the rings are pinned to the very top of the screen with nothing
+     over them but small icon buttons; only the menu scrolls (the price and Continue at its end),
+     and the steps stay at the bottom. The page itself never scrolls. */
   @media (max-width: 959px) {
     html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
-    .app { --stage-h: clamp(250px, 41vh, 480px); box-sizing: border-box; height: 100vh; height: 100dvh; min-height: 0; padding-top: env(safe-area-inset-top, 0px); grid-template-rows: auto auto minmax(0, 1fr) auto; }
-    @supports (height: 1svh) { .app { --stage-h: clamp(250px, 41svh, 480px); } }
-    .embed { --stage-h: clamp(200px, 36vh, 420px); }
-    /* The 3D starts under the header, on the same background, so the bands never run into it. */
-    #stage { top: 56px; }
-    .embed #stage { top: 0; }
-    .bar { grid-row: 1; grid-column: 1; align-self: start; position: relative; top: auto; z-index: 8; background: transparent; border-bottom: 0; pointer-events: none; }
-    .bar > * { pointer-events: auto; }
+    .app { --stage-h: clamp(200px, 34vh, 420px); box-sizing: border-box; height: 100vh; height: 100dvh; min-height: 0; padding-top: env(safe-area-inset-top, 0px); grid-template-rows: auto auto minmax(0, 1fr) auto; }
+    @supports (height: 1svh) { .app { --stage-h: clamp(200px, 34svh, 420px); } }
+    /* No logo or title: Share becomes the first of the icon buttons on the 3D. */
+    .bar { grid-row: 1; grid-column: 1; justify-self: end; align-self: start; position: relative; top: auto; z-index: 8; padding: 10px 10px 0; background: transparent; border-bottom: 0; }
+    .brand { display: none; }
+    .round-btn { width: 36px; height: 36px; border: 0; background: transparent; }
     .stage-wrap { grid-row: 1; grid-column: 1; position: relative; top: auto; }
-    .tools, .settings { top: 64px; }
-    .embed .tools, .embed .settings { top: 12px; }
+    .tools { top: 52px; gap: 6px; }
+    .zoom { height: 76px; }
+    .settings { top: 12px; }
+    .embed .tools { top: 12px; }
     .tabs { grid-row: 2; position: relative; top: auto; }
     .scroller { display: block; grid-row: 3; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     .buy { position: relative; bottom: auto; border-top: 0; padding-bottom: 16px; }

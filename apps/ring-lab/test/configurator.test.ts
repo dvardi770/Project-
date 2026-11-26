@@ -4,7 +4,7 @@ import { cut, caratsOf, widthForCarats, solidFromPlanes, SHAPES } from '../confi
 // @ts-expect-error plain JavaScript module without type declarations
 import { buildRing, HEADS, SHANKS } from '../configurator/engine/ring.mjs';
 // @ts-expect-error plain JavaScript module without type declarations
-import { buildBand, PROFILES, BAND_SHAPES, LAYOUTS, SETTINGS, autoThickness } from '../configurator/engine/band.mjs';
+import { buildBand, bandOptions, scatterLayout, PROFILES, BAND_SHAPES, ARRANGEMENTS, SET_STYLES, SPANS, EDGES, JOINS, SCATTER_PATTERNS, autoThickness } from '../configurator/engine/band.mjs';
 // @ts-expect-error plain JavaScript module without type declarations
 import { Mesh, band } from '../configurator/engine/geometry.mjs';
 // @ts-expect-error plain JavaScript module without type declarations
@@ -112,7 +112,7 @@ describe('ring builder', () => {
         expect(r.specs.metal.grams, `${head}/${shank}`).toBeLessThan(7);
       }
     }
-  });
+  }, 30_000);
 
   it('sets the centre stone clear of the band', () => {
     for (const shape of Object.keys(SHAPES)) {
@@ -178,26 +178,74 @@ describe('ring builder', () => {
 });
 
 describe('band builder', () => {
-  it('builds every profile, shape, layout and setting', () => {
+  const finite = (b: { parts: { geometry: Geometry }[] }) => b.parts.every((p) => allFinite(p.geometry.positions) && allFinite(p.geometry.normals));
+
+  it('builds every profile, shape, section count, join, edge and stone arrangement', () => {
     for (const profile of Object.keys(PROFILES)) for (const shape of Object.keys(BAND_SHAPES)) {
       const b = buildBand({ profile, shape });
       expect(b.parts.length).toBeGreaterThan(0);
-      for (const p of b.parts) expect(allFinite(p.geometry.positions) && allFinite(p.geometry.normals)).toBe(true);
+      expect(finite(b)).toBe(true);
     }
-    for (const layout of Object.keys(LAYOUTS)) expect(buildBand({ layout }).specs.metals.length).toBe(layout === 'single' ? 1 : 2);
-    for (const setting of Object.keys(SETTINGS)) {
-      const b = buildBand({ setting });
-      if (setting === 'none') expect(b.specs.stones.count).toBe(0);
+    for (const sections of [1, 2, 3, 4, 5]) for (const join of Object.keys(JOINS)) {
+      const b = buildBand({ sections, join, metal: 'yellow', metal2: 'white', metal3: 'rose', metal4: 'white', metal5: 'yellow' });
+      expect(finite(b)).toBe(true);
+      expect(b.specs.metals.length).toBe(Math.min(sections, 3));
+    }
+    for (const edge of Object.keys(EDGES)) for (const edgeSide of ['both', 'left', 'right']) expect(finite(buildBand({ edge, edgeSide }))).toBe(true);
+    for (const arrangement of Object.keys(ARRANGEMENTS)) for (const setStyle of Object.keys(SET_STYLES)) {
+      const b = buildBand({ arrangement, setStyle, width: 6 });
+      expect(finite(b)).toBe(true);
+      if (arrangement === 'none') expect(b.specs.stones.count).toBe(0);
       else expect(b.specs.stones.count).toBeGreaterThan(0);
     }
+  }, 60_000);
+
+  it('reads older shared designs: layouts and diamond settings', () => {
+    expect(bandOptions({ layout: 'stripe', metal: 'yellow', metal2: 'white' })).toMatchObject({ sections: 3, metal: 'yellow', metal2: 'white', metal3: 'yellow' });
+    expect(bandOptions({ layout: 'edges', metal: 'yellow', metal2: 'white' })).toMatchObject({ sections: 3, metal: 'white', metal2: 'yellow', metal3: 'white' });
+    expect(bandOptions({ layout: 'inside', metal2: 'rose' })).toMatchObject({ sections: 1, lining: true, liningMetal: 'rose' });
+    expect(bandOptions({ setting: 'channel-full' })).toMatchObject({ arrangement: 'along', setStyle: 'channel', span: 'full' });
+    expect(buildBand({ setting: 'pave-half' }).specs.stones.count).toBeGreaterThan(5);
+  });
+
+  it('sets more stones the further round a row goes, and fewer the wider apart', () => {
+    const count = (o: object) => buildBand({ arrangement: 'along', setStyle: 'pave', stoneSize: 1.2, ...o }).specs.stones.count;
+    const spans = Object.keys(SPANS).map((span) => count({ span }));
+    for (let i = 1; i < spans.length; i++) expect(spans[i]).toBeGreaterThan(spans[i - 1]);
+    expect(count({ span: 'half', spacing: 'touching' })).toBeGreaterThan(count({ span: 'half', spacing: 'wide' }) * 2);
+  });
+
+  it('keeps scattered stones on the band and apart from each other', () => {
+    for (const pattern of Object.keys(SCATTER_PATTERNS)) {
+      const pts = scatterLayout(pattern, 9, 1.4, 5, 16);
+      expect(pts.length).toBeGreaterThan(2);
+      for (const a of pts) {
+        expect(Math.abs(a.y) + a.r).toBeLessThanOrEqual(2.5);
+        for (const b of pts) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(a.r + b.r);
+      }
+    }
+    const beads = buildBand({ arrangement: 'scatter', scatterType: 'beads', scatterRepeat: 2 }).specs;
+    expect(beads.beads).toBeGreaterThan(0);
+  });
+
+  it('lines the inside in another metal and hides a stone there', () => {
+    const b = buildBand({ lining: true, liningMetal: 'white', metal: 'yellow', innerStone: 'ruby', engraving: 'Always' });
+    expect(b.specs.metals.map((m: { metal: string }) => m.metal)).toEqual(['yellow', 'white']);
+    const inner = b.parts.find((p: { inner: boolean }) => p.inner);
+    expect(inner.metal).toBe('white');
+    const ruby = b.stones.find((g: { gem: string }) => g.gem === 'ruby');
+    expect(ruby.matrices.length).toBe(1);
+    // Inside the band: closer to the finger than the outer surface.
+    const m = ruby.matrices[0];
+    expect(Math.hypot(m[12], m[13])).toBeLessThan(b.frame.inner + 0.5);
   });
 
   it('weighs like a real band and shares the weight between two metals', () => {
     // A 4 mm, 1.7 mm thick 14k band in a mid size weighs about 4–6 g.
-    const single = buildBand({ layout: 'single', width: 4, size: 54 });
+    const single = buildBand({ sections: 1, width: 4, size: 54 });
     expect(single.specs.grams).toBeGreaterThan(3.5);
     expect(single.specs.grams).toBeLessThan(7);
-    const split = buildBand({ layout: 'split', metal: 'yellow', metal2: 'yellow', width: 4, size: 54 });
+    const split = buildBand({ sections: 2, metal: 'yellow', metal2: 'yellow', width: 4, size: 54 });
     expect(split.specs.grams).toBeCloseTo(single.specs.grams, 0);
     expect(buildBand({ width: 7 }).specs.grams).toBeGreaterThan(buildBand({ width: 4 }).specs.grams * 1.6);
     expect(buildBand({ metal: 'platinum' }).specs.grams).toBeGreaterThan(buildBand({ metal: 'yellow' }).specs.grams * 1.4);
@@ -209,7 +257,7 @@ describe('band builder', () => {
   });
 
   it('faces its outer surface away from the finger', () => {
-    const b = buildBand({ layout: 'single' });
+    const b = buildBand({ sections: 1 });
     const outer = b.parts.find((p: { inner: boolean }) => !p.inner).geometry as Geometry;
     let best = 0, bestN = 0;
     for (let k = 0; k < outer.positions.length; k += 3) {

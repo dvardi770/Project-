@@ -37,8 +37,8 @@ async function test(name, fn) {
   try { await fn(); console.log(`  ✓ ${name}`); } catch (e) { failures++; console.log(`  ✗ ${name}\n    ${e.message}`); }
 }
 
-async function open(page, { width = 1280, height = 800 } = {}) {
-  const p = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+async function open(page, { width = 1280, height = 800, touch = false } = {}) {
+  const p = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1, ...(touch ? { isMobile: true, hasTouch: true } : {}) });
   await p.route(/^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+?)@[^/]+\/(.*)$/, (route) => {
     const [, name, file] = route.request().url().match(/^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+?)@[^/]+\/(.*)$/);
     try { route.fulfill({ status: 200, contentType: 'text/javascript', body: readFileSync(join(modules, name, file)) }); } catch { route.abort(); }
@@ -66,6 +66,20 @@ const drawnShare = (p, api) => p.evaluate(async (apiName) => {
   for (let i = 0; i < d.length; i += 4) if (d[i] < 235 || d[i + 1] < 235 || d[i + 2] < 235) drawn++;
   return drawn / (d.length / 4);
 }, api);
+
+
+/** Swipes a finger up the middle of the 3D stage; returns how far the page scrolled. */
+async function swipeUpOnStage(p) {
+  const box = await p.locator('#stage canvas').boundingBox();
+  const x = box.x + box.width / 2, y0 = box.y + box.height * 0.75, y1 = box.y + box.height * 0.15;
+  const before = await p.evaluate(() => scrollY);
+  const cdp = await p.context().newCDPSession(p);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
+  for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 + ((y1 - y0) * i) / 10 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await p.waitForTimeout(400);
+  return (await p.evaluate(() => scrollY)) - before;
+}
 
 console.log('ring builder');
 {
@@ -132,9 +146,20 @@ console.log('ring builder');
 
 console.log('ring builder on a phone');
 {
-  const { p, errors } = await open('ring-builder.html', { width: 390, height: 844 });
+  const { p, errors } = await open('ring-builder.html', { width: 375, height: 667, touch: true });
   await test('fits the screen without scrolling sideways', async () => {
     assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
+  });
+  await test('a swipe up over the 3D scrolls the page', async () => {
+    const moved = await swipeUpOnStage(p);
+    assert.ok(moved > 50, `page scrolled ${moved} px`);
+  });
+  await test('leaves room for the choices between the 3D and the price bar', async () => {
+    const room = await p.evaluate(() => {
+      const top = Math.max(...[...document.querySelectorAll('.stage-wrap, .tabs')].map((e) => e.getBoundingClientRect().bottom));
+      return document.querySelector('.buy').getBoundingClientRect().top - top;
+    });
+    assert.ok(room > 150, `${room} px for the choices`);
   });
   if (shots) await p.screenshot({ path: join(shots, 'ring-builder-phone.png') });
   await test('no errors on the page', async () => assert.deepEqual(errors, []));
@@ -194,9 +219,20 @@ console.log('band builder');
 
 console.log('band builder on a phone');
 {
-  const { p, errors } = await open('band-builder.html', { width: 390, height: 844 });
+  const { p, errors } = await open('band-builder.html', { width: 375, height: 667, touch: true });
   await test('fits the screen without scrolling sideways', async () => {
     assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
+  });
+  await test('a swipe up over the 3D scrolls the page', async () => {
+    const moved = await swipeUpOnStage(p);
+    assert.ok(moved > 50, `page scrolled ${moved} px`);
+  });
+  await test('leaves room for the choices between the 3D and the price bar', async () => {
+    const room = await p.evaluate(() => {
+      const top = Math.max(...[...document.querySelectorAll('.stage-wrap, .tabs')].map((e) => e.getBoundingClientRect().bottom));
+      return document.querySelector('.buy').getBoundingClientRect().top - top;
+    });
+    assert.ok(room > 150, `${room} px for the choices`);
   });
   if (shots) await p.screenshot({ path: join(shots, 'band-builder-phone.png') });
   await test('no errors on the page', async () => assert.deepEqual(errors, []));

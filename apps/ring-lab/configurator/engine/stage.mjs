@@ -335,7 +335,7 @@ export class Stage {
    */
   constructor(container, options = {}) {
     this.container = container;
-    this.options = { background: '#ffffff', autoRotate: true, rotateSpeed: 3.2, adaptive: true, ...options };
+    this.options = { background: '#ffffff', autoRotate: true, rotateSpeed: 3.2, adaptive: true, touchScroll: true, ...options };
     const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -353,6 +353,10 @@ export class Stage {
     controls.dampingFactor = 0.09;
     controls.rotateSpeed = 0.7;
     controls.enablePan = false;
+    // On a touch screen an up-or-down swipe over the 3D scrolls the page (the stage fills much of
+    // a phone's screen); a sideways swipe turns the ring and a pinch zooms. OrbitControls turns
+    // all touch scrolling off, so this comes after it.
+    if (this.options.touchScroll) renderer.domElement.style.touchAction = 'pan-y';
     controls.minPolarAngle = 0.12;
     controls.maxPolarAngle = Math.PI * 0.53;
     controls.autoRotate = this.options.autoRotate && !matchMedia('(prefers-reduced-motion: reduce)').matches;

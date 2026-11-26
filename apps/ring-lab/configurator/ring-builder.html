@@ -23,13 +23,13 @@
   body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
   button, select { font: inherit; color: inherit; }
   .app > * { min-width: 0; }
-  .app { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; }
+  .app { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; }
   .bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: .01em; }
   .brand small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; letter-spacing: .04em; }
   .icon-btn { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
   .icon-btn:hover { border-color: var(--faint); }
-  .stage-wrap { position: sticky; top: calc(57px + env(safe-area-inset-top, 0px)); z-index: 4; background: var(--stage); height: min(50vh, 460px); border-bottom: 1px solid var(--line); }
+  .stage-wrap { position: sticky; top: calc(57px + env(safe-area-inset-top, 0px)); z-index: 4; background: var(--stage); height: clamp(190px, 38vh, 460px); height: clamp(190px, 38svh, 460px); border-bottom: 1px solid var(--line); }
   #stage { position: absolute; inset: 0; }
   .tools { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 8px; }
   .tool { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent); display: grid; place-items: center; cursor: pointer; }
@@ -38,6 +38,8 @@
   .views button { border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent); border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; }
   .hint { position: absolute; right: 14px; bottom: 14px; margin: 0; font-size: 12px; color: var(--faint); pointer-events: none; }
   @media (max-width: 560px) { .hint { display: none; } }
+  /* Short phones: a slimmer price bar leaves more room for the choices. */
+  @media (max-width: 959px) and (max-height: 760px) { .price .spec { display: none; } .buy { padding-top: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); } }
   .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; background: var(--stage); transition: opacity .4s; }
   .loading[hidden] { display: grid; opacity: 0; pointer-events: none; }
   .panel { padding: 18px 16px 24px; }
@@ -70,7 +72,7 @@
   .link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; font-size: 12.5px; cursor: pointer; }
   .primary { border: 0; background: var(--ink); color: var(--bg); height: 46px; padding: 0 22px; border-radius: 6px; letter-spacing: .08em; font-size: 13px; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
   .primary:hover { opacity: .9; }
-  .breakdown { margin: 10px 0 2px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .breakdown { margin: 10px 0 2px; border-top: 1px dashed var(--line); padding-top: 8px; max-height: 34vh; max-height: 34svh; overflow-y: auto; overscroll-behavior: contain; }
   .breakdown div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; }
   .breakdown div span:first-child { color: var(--muted); }
   .breakdown .estimate { color: var(--faint); font-size: 12px; margin-top: 4px; display: block; }
@@ -82,8 +84,8 @@
   @media (min-width: 960px) {
     .app { grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: auto 1fr auto; }
     .bar { grid-column: 1 / -1; }
-    .stage-wrap { grid-row: 2 / 4; grid-column: 1; height: calc(100vh - 57px); border-bottom: 0; border-right: 1px solid var(--line); }
-    .embed .stage-wrap { height: 100vh; }
+    .stage-wrap { grid-row: 2 / 4; grid-column: 1; height: calc(100vh - 57px); height: calc(100dvh - 57px); border-bottom: 0; border-right: 1px solid var(--line); }
+    .embed .stage-wrap { height: 100vh; height: 100dvh; }
     .panel { grid-column: 2; grid-row: 2; padding: 22px 24px; }
     .buy { grid-column: 2; grid-row: 3; padding: 12px 24px 16px; }
     h1 { font-size: 30px; }

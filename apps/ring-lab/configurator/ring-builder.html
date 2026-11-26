@@ -368,8 +368,18 @@ function scheduleThumbs() {
   clearTimeout(thumbTimer);
   thumbTimer = setTimeout(makeThumbs, 900);
 }
+// Thumbnails are drawn only once the head or shank choices are on screen (or nearly).
+const thumbsInView = () => ['head', 'shank'].some((k) => {
+  const box = optionsEl.querySelector(`[aria-labelledby="h-${k}"]`)?.getBoundingClientRect();
+  return box && box.bottom > -200 && box.top < innerHeight + 200;
+});
+let thumbsWaiting = false;
+const recheckThumbs = () => { if (thumbsWaiting && thumbsInView()) { thumbsWaiting = false; makeThumbs(); } };
+addEventListener('scroll', recheckThumbs, { passive: true });
+document.querySelector('.panel').addEventListener('scroll', recheckThumbs, { passive: true });
 async function makeThumbs() {
   if (!stage.thumbnail) return;
+  if (!thumbsInView()) { thumbsWaiting = true; return; }
   const key = `${state.shape}|${state.carat}|${state.gem}|${state.headMetal}|${state.shankMetal}|${state.accentGem}`;
   if (makeThumbs.key === key) return;
   makeThumbs.key = key;

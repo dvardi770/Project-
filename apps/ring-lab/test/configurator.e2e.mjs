@@ -192,7 +192,7 @@ console.log('band builder');
   await test('linked rings share design choices but not sizes', async () => {
     await p.getByRole('radio', { name: 'Dome' }).click();
     assert.equal(await p.evaluate(() => window.bandBuilder.state.his.profile), 'dome');
-    await p.getByRole('tab', { name: "Men's" }).click();
+    await p.getByRole('tab', { name: "Men's", exact: true }).click();
     await p.getByLabel('Ring size').selectOption('64');
     assert.equal(await p.evaluate(() => window.bandBuilder.state.her.size), 52);
     await p.getByRole('button', { name: 'Design both rings together' }).click();

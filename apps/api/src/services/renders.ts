@@ -30,6 +30,42 @@ export async function loadManifest(rendersDir: string, collection: string): Prom
   }
 }
 
+const remote = new Map<string, { at: number; manifest: RenderManifest | null }>();
+const REMOTE_TTL_MS = 5 * 60_000;
+
+/**
+ * The collection's manifest from where the renders are published (RENDERS_PUBLIC_URL), for a server
+ * with no copy of them on disk: kept for five minutes; null (also kept, so a missing or slow host is
+ * not asked on every request) when it cannot be fetched within three seconds.
+ */
+export async function loadRemoteManifest(publicBase: string, collection: string): Promise<RenderManifest | null> {
+  const url = `${publicBase.replace(/\/+$/, '')}/${encodeURIComponent(collection)}/media/manifest.json`;
+  const hit = remote.get(url);
+  if (hit && Date.now() - hit.at < REMOTE_TTL_MS) return hit.manifest;
+  let manifest: RenderManifest | null = null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const body = (await res.json()) as RenderManifest;
+      if (body && Array.isArray(body.combos)) manifest = body;
+    }
+  } catch {
+    manifest = null;
+  }
+  remote.set(url, { at: Date.now(), manifest });
+  return manifest;
+}
+
+/** The manifest from RENDERS_DIR when there is one, else from RENDERS_PUBLIC_URL. */
+export async function findManifest(
+  config: { rendersDir?: string; rendersPublicUrl?: string },
+  collection: string,
+): Promise<RenderManifest | null> {
+  if (config.rendersDir) return loadManifest(config.rendersDir, collection);
+  if (config.rendersPublicUrl) return loadRemoteManifest(config.rendersPublicUrl, collection);
+  return null;
+}
+
 /** The render manifest's metal for a stocked metal. Palladium and silver look like white metal. */
 export function renderMetal(metal: MetalType, available: string[]): string | null {
   const want = metal.startsWith('YELLOW') ? 'yellow' : metal.startsWith('ROSE') ? 'rose' : metal.startsWith('PLATINUM') ? 'platinum' : 'white';

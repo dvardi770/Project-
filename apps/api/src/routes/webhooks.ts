@@ -42,10 +42,15 @@ export async function webhookRoutes(app: FastifyInstance, deps: AppDeps): Promis
     }
 
     const tenant = await db.tenant.findFirst({ where: { id: tenantId, platformType: platform, deletedAt: null } });
+    const rawBody = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
+    // WooCommerce checks a new webhook's address with an unsigned "webhook_id=N" ping and will not
+    // turn the webhook on unless it gets a 2xx. It carries no order, so nothing is done with it.
+    if (tenant && platform === 'WOOCOMMERCE' && !request.headers['x-wc-webhook-signature'] && /^webhook_id=\d+$/.test(rawBody.toString('utf8').trim())) {
+      return { received: true, handled: false };
+    }
     // Same answer whether the tenant is unknown or the signature is wrong.
     if (!tenant?.platformWebhookSecretEnc) throw unauthorized('Invalid webhook signature.');
 
-    const rawBody = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
     let received;
     try {
       const secret = decryptSecret(tenant.platformWebhookSecretEnc, config.credentialsKey);

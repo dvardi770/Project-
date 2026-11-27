@@ -40,6 +40,7 @@ function wp_script_is( $handle ) { return isset( $GLOBALS['wp']['registered'][ $
 function wp_enqueue_script( $handle ) { $GLOBALS['wp']['enqueued'][] = $handle; }
 function add_settings_error( $setting, $code, $message ) { $GLOBALS['wp']['errors'][] = $code; }
 function determine_locale() { return 'en_GB'; }
+function wp_json_encode( $data, $flags = 0 ) { return json_encode( $data, $flags ); }
 function __( $text ) { return $text; }
 function esc_html__( $text ) { return htmlspecialchars( $text, ENT_QUOTES ); }
 function esc_html( $text ) { return htmlspecialchars( (string) $text, ENT_QUOTES ); }
@@ -107,6 +108,19 @@ check( 'adds defer to the widget script only', false !== strpos( $tag, '<script 
 // A custom script URL.
 $GLOBALS['wp']['options']['jewelry_builder_settings']['script_url'] = 'https://cdn.example.com/w.js';
 check( 'a configured script address wins', 'https://cdn.example.com/w.js' === $plugin->get_script_url() );
+
+// The 3D builders.
+$ring = $GLOBALS['wp']['shortcodes']['jewelry_ring_builder'] ?? null;
+$band = $GLOBALS['wp']['shortcodes']['jewelry_band_builder'] ?? null;
+check( 'registers [jewelry_ring_builder] and [jewelry_band_builder]', is_callable( $ring ) && is_callable( $band ) );
+$html = $ring( array( 'height' => '700px', 'go_to_cart' => 'no' ) );
+check( 'frames the ring builder from the API', false !== strpos( $html, 'src="https://api.example.com/builder/ring-builder.html?embed"' ) && false !== strpos( $html, 'height:700px' ) && false !== strpos( $html, 'data-go-to-cart="0"' ) );
+check( 'adds the cart bridge with the API address and key', false !== strpos( $html, '"api":"https://api.example.com"' ) && false !== strpos( $html, '/api/v1/custom/cart-item' ) && false !== strpos( $html, '"key":"pk_live_abcDEF123-_"' ) );
+$html2 = $band( array( 'height' => '100%;background:url(x)' ) );
+check( 'frames the band builder; a strange height falls back', false !== strpos( $html2, 'band-builder.html?embed' ) && false !== strpos( $html2, 'height:88vh' ) && false === strpos( $html2, 'url(x)' ) );
+check( 'prints the bridge once a page', false === strpos( $html2, '<script>' ) );
+$GLOBALS['wp']['options']['jewelry_builder_settings'] = array();
+check( 'unconfigured: the 3D builders show nothing to shoppers', '' === $ring( array() ) );
 
 echo $failures ? "\n$failures FAILED\n" : "\nall passed\n";
 exit( $failures ? 1 : 0 );

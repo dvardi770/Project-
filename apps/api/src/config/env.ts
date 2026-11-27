@@ -1,6 +1,7 @@
 import { FeedSource } from '@jewelry/db';
 import { parseEncryptionKey } from '@jewelry/platforms';
 import { z } from 'zod';
+import { DEFAULT_BUILDER_DIR } from '../services/customDesign';
 
 const csv = (value: string | undefined) =>
   (value ?? '')
@@ -26,6 +27,7 @@ const schema = z.object({
   WIDGET_BUNDLE_PATH: z.string().optional(),
   RENDERS_DIR: z.string().optional(),
   RENDERS_PUBLIC_URL: z.string().url().optional(),
+  BUILDER_DIR: z.string().optional(),
 });
 
 export interface AppConfig {
@@ -56,6 +58,8 @@ export interface AppConfig {
   rendersDir?: string;
   /** Public URL of the same folder on a CDN. Default: this API's own /renders/. */
   rendersPublicUrl?: string;
+  /** The 3D ring and band builders (apps/ring-lab/configurator): served at /builder/, and their engine prices custom designs. */
+  builderDir: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -96,5 +100,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     widgetBundlePath: e.WIDGET_BUNDLE_PATH,
     rendersDir: e.RENDERS_DIR,
     rendersPublicUrl: e.RENDERS_PUBLIC_URL?.replace(/\/+$/, ''),
+    builderDir: e.BUILDER_DIR ?? DEFAULT_BUILDER_DIR,
   };
 }

@@ -283,8 +283,21 @@ choice fits any other without CAD files (see the ring lab's README):
 
 Both keep the design in the link (share), work embedded (`?embed`), and hand the design, specs and price
 to the store page with a `ring-builder:add-to-cart` / `band-builder:add-to-cart` event (and
-`postMessage` when framed). Prices come from a price list in `engine/pricing.mjs`; they are not yet
-priced or checked by the API, and the cart hand-off is not yet wired to the storefront connectors.
+`postMessage` when framed; the band builder says which `rings` to buy, the pair or one). Prices come
+from a price list in `engine/pricing.mjs`.
+
+In a store:
+- **Pages.** The API serves both builders at `/builder/ring-builder.html` and `/builder/band-builder.html`
+  (from `BUILDER_DIR`, default `apps/ring-lab/configurator`). The WordPress plugin frames them with
+  `[jewelry_ring_builder]` and `[jewelry_band_builder]`.
+- **Adding to the cart.** On "Add to cart" the plugin's page script sends the design to
+  `POST /api/v1/custom/cart-item` (`{ kind: 'ring' | 'band', design }`). The API builds and prices the
+  design itself with the same engine (`services/customDesign.ts`); the browser's price is never read.
+  It records a checkout session and creates a hidden one-off product at that price. The script then
+  adds the product to WooCommerce's cart and reports back to the builder.
+- **When it's paid.** The order webhook turns each design into a casting order. The order has no
+  catalogue setting: `customDesign` holds the design, specs and price lines, and the dashboard lists
+  the order by its title.
 
 ### Rendered photos, 360° video and 3D
 

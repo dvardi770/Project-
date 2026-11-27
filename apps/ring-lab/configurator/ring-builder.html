@@ -370,9 +370,18 @@ document.getElementById('add').addEventListener('click', () => {
   const detail = { type: 'ring-builder:add-to-cart', design: { ...state }, specs: design.specs, price };
   window.dispatchEvent(new CustomEvent('ring-builder:add-to-cart', { detail }));
   // The store page that embeds the builder adds it to its cart.
-  if (window.parent !== window) window.parent.postMessage(detail, '*');
-  toast('Added to your cart');
+  if (window.parent !== window) {
+    window.parent.postMessage(detail, '*');
+    toast('Adding to your cart…');
+  } else toast('Added to your cart');
 });
+
+// In a store page (the WordPress plugin's frame), the store adds the design to its cart and says
+// how that went.
+window.addEventListener('message', (e) => {
+  if (e.source === window.parent && e.data && e.data.type === 'builder:cart-result') toast(String(e.data.message || ''));
+});
+
 
 document.getElementById('share').addEventListener('click', async () => {
   const url = location.href;

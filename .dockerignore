@@ -2,7 +2,10 @@
 **/.next
 **/dist
 .git
-apps/ring-lab
+# The ring lab is not part of the image, except the 3D builders (served at /builder/, and their
+# engine prices custom designs).
+apps/ring-lab/*
+!apps/ring-lab/configurator
 **/*.3dm
 **/media
 **/.env

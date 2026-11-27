@@ -51,6 +51,30 @@ function describeStone(snapshot: unknown): string {
     .join(', ');
 }
 
+type Custom = { title?: string; kind?: string; specs?: Record<string, any> } | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+const asCustom = (d: unknown): Custom => (d && typeof d === 'object' ? (d as Custom) : null);
+function customTitle(d: unknown): string {
+  return asCustom(d)?.title ?? 'Custom design';
+}
+function customMetal(d: unknown): string {
+  const s = asCustom(d)?.specs;
+  if (!s) return 'As designed';
+  if (s.metals) return (s.metals as { label: string }[]).map((m) => m.label).join(' + ');
+  if (s.metal?.head && s.metal?.shank) return s.metal.head.label === s.metal.shank.label ? s.metal.shank.label : `${s.metal.shank.label} / ${s.metal.head.label}`;
+  return 'As designed';
+}
+function customStones(d: unknown): string {
+  const s = asCustom(d)?.specs;
+  if (!s) return '—';
+  if (s.centre) {
+    const parts = [`${Number(s.centre.size).toFixed(2)} ct ${s.centre.label} ${s.centre.gem ?? ''}`.trim()];
+    if (s.sides) parts.push(`2 ${s.sides.shape} sides`);
+    if (s.accents?.count) parts.push(`${s.accents.count} accents`);
+    return parts.join(', ');
+  }
+  return s.stones?.count ? `${s.stones.count} diamonds, ${Number(s.stones.carats).toFixed(2)} ct` : 'No stones';
+}
+
 export async function listOrders(db: PrismaClient, tenantId: string, limit = 100): Promise<OrderRow[]> {
   const orders = await db.castingOrder.findMany({
     where: { tenantId },
@@ -69,9 +93,10 @@ export async function listOrders(db: PrismaClient, tenantId: string, limit = 100
     status: o.status,
     currentStage: o.currentStage,
     externalOrderId: o.externalOrderId,
-    settingName: o.settingVariant.setting.name,
-    metal: metalLabel(o.metal),
-    stone: describeStone(o.centerStoneSnapshot),
+    // A design from the 3D builders has no catalogue setting: it is named and described by its design.
+    settingName: o.settingVariant?.setting.name ?? customTitle(o.customDesign),
+    metal: o.metal ? metalLabel(o.metal) : customMetal(o.customDesign),
+    stone: o.customDesign ? customStones(o.customDesign) : describeStone(o.centerStoneSnapshot),
     ringSize: o.ringSize.toString(),
     engraving: o.engraving,
     total: o.retailTotal.toFixed(2),

@@ -73,7 +73,14 @@ async function swipeUp(p, selector, menu) {
   const box = await p.locator(selector).first().boundingBox();
   const x = box.x + box.width / 2, y0 = box.y + box.height * 0.8, y1 = box.y + box.height * 0.2;
   const where = () => p.evaluate((m) => ({ page: scrollY, menu: document.querySelector(m).scrollTop, stage: document.querySelector('.stage-wrap').getBoundingClientRect().top }), menu);
-  const before = await where();
+  // Let any earlier fling come to rest first, so it is not counted as this swipe's movement.
+  let before = await where();
+  for (let i = 0; i < 20; i++) {
+    await p.waitForTimeout(150);
+    const now = await where();
+    if (JSON.stringify(now) === JSON.stringify(before)) break;
+    before = now;
+  }
   const cdp = await p.context().newCDPSession(p);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
   for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 + ((y1 - y0) * i) / 10 }] });

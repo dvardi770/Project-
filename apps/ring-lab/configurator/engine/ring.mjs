@@ -7,7 +7,7 @@
  * Axes (see geometry.mjs): finger along z, band in the x-y plane, head at +y. Stones' length runs
  * along the finger (z).
  */
-import { cut, caratsOf, widthForCarats, SHAPES } from './cuts.mjs';
+import { cut, caratsOf, widthForCarats, SHAPES, SIDE_SHAPES } from './cuts.mjs';
 import { Mesh, band, wire, bead, loop, curve, superellipse, evenly, matrix, vec } from './geometry.mjs';
 import { GEMS, METALS, gramsOf, metalLabel, usToDiameter } from './materials.mjs';
 
@@ -53,7 +53,17 @@ export const RING_SIZES = Array.from({ length: 17 }, (_, i) => 3 + i * 0.5);
 export const DEFAULT_RING = {
   shape: 'round', carat: 1, gem: 'diamond', head: 'four-prong', shank: 'pave',
   headMetal: 'white', shankMetal: 'white', karat: '14k', accentGem: 'diamond', size: 6,
+  // Three-stone side stones: shape, width across the band in mm (0: sized to the centre stone)
+  // and lean in degrees (−1: following the band).
+  sideShape: 'round', sideSize: 0, sideAngle: -1,
 };
+
+// Side stones' usual width next to a centre stone, as a share of the round default.
+const SIDE_WIDTH = { round: 1, princess: 0.95, trillion: 1, oval: 0.85, pear: 0.85, marquise: 0.75, emerald: 0.85, baguette: 0.5, 'tapered-baguette': 0.5, 'half-moon': 1.25 };
+// Where a side stone's prongs go: towards its corners (directions in its own x, z).
+const sideProngDirections = (key, ratio) => key === 'trillion' ? [[0, -1], [0.87, 0.5], [-0.87, 0.5]]
+  : key === 'half-moon' ? [[1, 0.35], [-1, 0.35], [0.75, -0.8], [-0.75, -0.8]]
+  : [[1, ratio], [-1, ratio], [1, -ratio], [-1, -ratio]];
 
 // Where the prongs go, as positions on the outline (degrees of each outline's own parameter).
 const PRONGS = {
@@ -188,61 +198,101 @@ export function buildRing(input = {}) {
     }
   }
 
-  // Three stone: a round stone either side of the centre, lower down on the band's shoulders and
-  // tilted outwards with its curve, each in its own four-prong basket that sits on the band,
-  // their girdles close to the centre stone's.
+  // Three stone: a stone either side of the centre (any of SIDE_SHAPES), lower down on the
+  // band's shoulders and leaning outwards with its curve (or at a chosen angle), each in its own
+  // basket that sits on the band, prongs at its corners, its girdle close to the centre stone's.
+  // The side stone's length runs along the band; its +z end faces the centre stone.
   const headReach = head.halo ? clamp(0.15 * Math.min(W, L), 0.9, 1.5) * 1.15 + 0.15 : rp * 2.2;
-  let sideReach = 0, sideFoot = 0, sideRail = null;
+  let sideReach = 0, sideFoot = 0, sideRail = null, sideInfo = null;
+  const sideKey = SIDE_SHAPES[o.sideShape] ? o.sideShape : 'round';
   if (head.sides) {
-    const ds = clamp(0.62 * Math.min(W, L), 2.6, 6.5);
-    const sc = cut('round');
-    const sDepth = -sc.bottom * ds, sCrown = sc.top * ds;
-    const srp = clamp(0.07 * ds, 0.28, 0.5);
+    const sc = cut(sideKey);
+    const autoWidth = clamp(0.62 * Math.min(W, L), 2.6, 6.5) * (SIDE_WIDTH[sideKey] ?? 1);
+    const ws = Number(o.sideSize) > 0 ? clamp(Number(o.sideSize), 1.5, 8) : autoWidth;
+    const sDepth = -sc.bottom * ws, sCrown = sc.top * ws;
+    const srp = clamp(0.07 * Math.min(ws, ws * sc.ratio) + 0.06, 0.26, 0.5);
     const lift = sDepth + 0.95;                       // girdle above the basket's foot
-    const tilt = 0.6;                                 // how far the stones lean with the band
     const gap = 0.12 + rp * 0.2;                      // side girdle to centre girdle
-    // The centre basket's mid rail, at its widest along x.
+    // The stone's outline at its size: how far it reaches towards the centre and away from it.
+    const oc = sc.outline.centre ?? [0, 0];
+    let zFront = -Infinity, zBack = Infinity;
+    for (let i = 0; i < 360; i++) { const { p } = sc.outline.at((i / 360) * 2 * Math.PI); zFront = Math.max(zFront, p[1] * ws); zBack = Math.min(zBack, p[1] * ws); }
+    // The centre stone's half-width along x: at its girdle, and down its pavilion, which narrows
+    // towards the culet, so a lower side stone can tuck in under the girdle's edge. Its basket's
+    // mid rail must stay clear too.
     let inner = 0;
     for (let deg = 0; deg < 360; deg += 2) inner = Math.max(inner, Math.abs(beside(deg, 0, 0, 0)[0]));
+    const railX = Math.abs(beside(0, 0.5, rp * 1.1, 0)[0]) + rp * 0.7;
+    const clearAt = (y) => {
+      const below = clamp((yGirdle - y) / depth, 0, 1);
+      // Seen from above, the side stone may only just slip under the girdle's edge.
+      return Math.max(inner * Math.max(1 - below * 0.92, 0.95), y < yGirdle - depth * 0.3 ? railX : 0) + gap;
+    };
     const placeAt = (phi) => {
       const tBand = shank.strands ? shank.strand * 2 : shankShape(shank, phi).t;
       const rho = R + tBand + lift - 0.22;            // the foot sinks a little into the band
-      const th = tilt * phi;
+      const th = Number(o.sideAngle) >= 0 ? clamp(Number(o.sideAngle), 0, 50) * DEG : 0.6 * phi;
       return { phi, th, c: [rho * Math.sin(phi), rho * Math.cos(phi)], right: [Math.cos(th), -Math.sin(th)], up: [Math.sin(th), Math.cos(th)] };
     };
     // Lean out along the band until the side stone's inner girdle clears the centre stone.
-    let lo = 0.01, hi = 1.2;
+    let lo = 0.01, hi = 1.4;
     for (let k = 0; k < 40; k++) {
       const mid = (lo + hi) / 2, s = placeAt(mid);
-      if (s.c[0] - s.right[0] * (ds / 2) < inner + gap) lo = mid; else hi = mid;
+      // The inner end of the side stone's girdle, and the top of its crown there.
+      const px = s.c[0] - s.right[0] * zFront, py = s.c[1] - s.right[1] * zFront;
+      if (px < clearAt(py + sCrown * 0.5) || px < clearAt(py)) lo = mid; else hi = mid;
     }
     const s = placeAt(hi);
+    const prongTs = sideProngDirections(sideKey, sc.ratio).map((d) => {
+      let best = 0, bv = -Infinity;
+      for (let i = 0; i < 720; i++) { const t = (i / 720) * 2 * Math.PI; const { p } = sc.outline.at(t); const v = p[0] * d[0] + p[1] * d[1]; if (v > bv) { bv = v; best = t; } }
+      return best;
+    });
     for (const sx of [-1, 1]) {
-      const right = [s.right[0], sx * s.right[1], 0], up = [sx * s.up[0], s.up[1], 0], z = [0, 0, 1];
+      const right = [s.right[0], sx * s.right[1], 0], up = [sx * s.up[0], s.up[1], 0];
+      // The stone's own axes: x across the band (along the finger), y up through its table,
+      // z towards the centre stone. Mirrored on the left so both are right-handed.
+      const X = [0, 0, sx], Zc = vec.scale(right, -sx);
       const c = [sx * s.c[0], s.c[1], 0];
-      // A point in the side stone's own frame: x towards its outer side, y up through its table.
-      const local = (lx, ly, lz) => vec.add(vec.add(vec.add(c, vec.scale(right, sx * lx)), vec.scale(up, ly)), vec.scale(z, lz));
-      const at = (deg, f, out, ly) => {
-        const a = deg * DEG, r = (ds / 2) * (1 - f * 0.92) + out;
-        return local(r * Math.cos(a), ly, r * Math.sin(a));
+      const local = (lx, ly, lz) => vec.add(vec.add(vec.add(c, vec.scale(X, lx)), vec.scale(up, ly)), vec.scale(Zc, lz));
+      // A point beside the stone: f of the way down the pavilion, `out` mm outside it.
+      const at = (t, f, out, ly) => {
+        const { p, n } = sc.outline.at(t);
+        const k = 1 - f * 0.92;
+        return local((oc[0] + (p[0] - oc[0]) * k) * ws + n[0] * out, ly, (oc[1] + (p[1] - oc[1]) * k) * ws + n[1] * out);
       };
-      stones.side.push(matrix(right, up, z, ds, c));
-      for (const deg of [45, 135, 225, 315]) {
+      stones.side.push(matrix(X, up, Zc, ws, c));
+      for (const t of prongTs) {
         wire(headMesh, curve([
-          at(deg, 0.72, srp * 0.6, -lift),
-          at(deg, 0.5, srp * 1.05, -sDepth * 0.5),
-          at(deg, 0, srp * 0.95, 0),
-          at(deg, 0.035, srp * 0.42, sCrown * 0.5 + srp * 0.3),
-        ], { steps: 7 }), { radius: (t) => srp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(t * 1.4, 1)) - 0.06 * t), sides: 16 });
+          at(t, 0.72, srp * 0.6, -lift),
+          at(t, 0.5, srp * 1.05, -sDepth * 0.5),
+          at(t, 0, srp * 0.95, 0),
+          at(t, 0.035, srp * 0.42, sCrown * 0.5 + srp * 0.3),
+        ], { steps: 7 }), { radius: (u) => srp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(u * 1.4, 1)) - 0.06 * u), sides: 16 });
       }
-      wire(headMesh, Array.from({ length: 48 }, (_, k) => at((k / 48) * 360, 0.5, srp * 1.1, -sDepth * 0.5)), { radius: srp * 0.72, closed: true, sides: 12 });
-      wire(headMesh, Array.from({ length: 36 }, (_, k) => at((k / 36) * 360, 0.72, srp * 0.6, -lift)), { radius: srp * 0.85, closed: true, sides: 12 });
-      if (sx === 1) sideRail = { x: at(0, 0.5, srp * 1.1, -sDepth * 0.5)[0], y: at(0, 0.5, srp * 1.1, -sDepth * 0.5)[1] };
+      const ring = (f, out, ly, count) => Array.from({ length: count }, (_, k) => at((k / count) * 2 * Math.PI, f, out, ly));
+      wire(headMesh, ring(0.5, srp * 1.1, -sDepth * 0.5, 72), { radius: srp * 0.72, closed: true, sides: 12 });
+      wire(headMesh, ring(0.72, srp * 0.6, -lift, 48), { radius: srp * 0.85, closed: true, sides: 12 });
+      // A bar low down from the centre basket's foot to this basket's, when they are close, so
+      // the three baskets read as one gallery.
+      let tIn = 0, zMax = -Infinity;
+      for (let i = 0; i < 360; i++) { const t = (i / 360) * 2 * Math.PI; const z = sc.outline.at(t).p[1]; if (z > zMax) { zMax = z; tIn = t; } }
+      const to = at(tIn, 0.72, srp * 0.6, -lift);
+      const from = beside(sx > 0 ? 0 : 180, 0.72, rp * 0.6, bandTop + 0.25);
+      if (Math.hypot(to[0] - from[0], to[1] - from[1]) < 4.5) wire(headMesh, curve([from, vec.add(vec.scale(vec.add(from, to), 0.5), [0, 0.15, 0]), to], { steps: 6 }), { radius: Math.min(rp, srp) * 0.85, sides: 12 });
+      if (sx === 1) {
+        // The basket's outer end, where cathedral arches meet it.
+        let tOut = 0, zMin = Infinity;
+        for (let i = 0; i < 360; i++) { const t = (i / 360) * 2 * Math.PI; const z = sc.outline.at(t).p[1]; if (z < zMin) { zMin = z; tOut = t; } }
+        const q = at(tOut, 0.5, srp * 1.1, -sDepth * 0.5);
+        sideRail = { x: q[0], y: q[1] };
+      }
     }
-    const outer = s.c[0] + s.right[0] * (ds / 2 + srp) + s.up[0] * sCrown;
+    const outer = s.c[0] + s.right[0] * (-zBack + srp) + s.up[0] * sCrown;
     sideReach = Math.max(0, outer - (W / 2 + headReach));
     // Where the side basket's foot meets the band, measured along the band.
-    sideFoot = (R + tTop) * Math.sin(s.phi) + (ds / 2) * 0.4 + srp;
+    sideFoot = (R + tTop) * Math.sin(s.phi) + Math.max(zFront, -zBack) * 0.4 + srp;
+    sideInfo = { shape: sideKey, width: round(ws, 2), length: round(ws * sc.ratio, 2), angle: Math.round(s.th / DEG), carats: round(caratsOf(sideKey, ws, accentGemDensity(o)), 3) };
   }
 
   // ── Shank ──
@@ -264,7 +314,7 @@ export function buildRing(input = {}) {
 
   // ── Specs ──
   const gem = GEMS[o.gem], accentGem = GEMS[o.accentGem];
-  const accentCarats = sumCarats(stones.accent, 'round-accent', accentGem.density) + sumCarats(stones.channel, 'princess-accent', accentGem.density) + sumCarats(stones.side, 'round', accentGem.density);
+  const accentCarats = sumCarats(stones.accent, 'round-accent', accentGem.density) + sumCarats(stones.channel, 'princess-accent', accentGem.density) + sumCarats(stones.side, sideKey, accentGem.density);
   const centreCarats = caratsOf(o.shape, W, gem.density);
   const headVolume = headMesh.volume, shankVolume = shankMesh.volume;
   const specs = {
@@ -276,6 +326,7 @@ export function buildRing(input = {}) {
       shank: { metal: o.shankMetal, label: metalLabel(o.shankMetal, o.karat), grams: round(gramsOf(shankVolume, o.shankMetal, o.karat), 2) },
     },
     head: o.head, shank: o.shank, size: o.size,
+    sides: sideInfo,
   };
   specs.metal.grams = round(specs.metal.head.grams + specs.metal.shank.grams, 2);
 
@@ -286,7 +337,7 @@ export function buildRing(input = {}) {
       { cut: o.shape, gem: o.gem, role: 'centre', matrices: stones.centre },
       { cut: 'round-accent', gem: o.accentGem, role: 'accent', matrices: stones.accent },
       { cut: 'princess-accent', gem: o.accentGem, role: 'accent', matrices: stones.channel },
-      { cut: 'round', gem: o.accentGem, role: 'centre', matrices: stones.side },
+      { cut: sideKey, gem: o.accentGem, role: 'centre', matrices: stones.side },
     ].filter((s) => s.matrices.length),
     specs,
     frame: {
@@ -306,6 +357,7 @@ export function buildRing(input = {}) {
 }
 
 const round = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
+const accentGemDensity = (o) => (GEMS[o.accentGem] ?? GEMS.diamond).density;
 const sumCarats = (list, key, density) => list.reduce((s, m) => s + caratsOf(key, Math.hypot(m[0], m[1], m[2]), density), 0);
 
 /**

@@ -12,12 +12,15 @@ for a pair of rings.
   40.75°, 8 bezel, 8 star, 16 upper-half, 8 main and 16 lower-half facets, faceted girdle), an
   emerald step cut, princess and marquise. Sizes come from carats: a 1 ct round is 6.4 mm, a 1 ct
   oval 7.7 × 5.6 mm, as real stones are (weights use each gem's density). A radiant is a brilliant
-  on a cut-cornered rectangle; an asscher a square step cut with deep corners. Accent stones use a
-  simpler cut with 33 facets, since they are a few pixels across.
+  on a cut-cornered rectangle; an asscher a square step cut with deep corners. Side stones for
+  three-stone rings add baguette, tapered baguette, trillion and half moon (`SIDE_SHAPES`). Accent
+  stones use a simpler cut with 33 facets, since they are a few pixels across.
 - **Ring parts** (`engine/ring.mjs`, `engine/geometry.mjs`): heads are prongs swept along curves
   round the stone's outline, with basket rails; halos of small stones set tight round the centre
   stone, with the centre's prongs rising through gaps between them; hidden and secret halos under
-  the girdle; bezels and tulip petals. Shanks are cross-sections swept round the finger (tapering,
+  the girdle; bezels and tulip petals; three-stone heads whose side stones (any of ten shapes, a
+  chosen size and lean) sit in their own baskets with prongs at their corners, tucked in beside the
+  centre stone, the baskets joined low down. Shanks are cross-sections swept round the finger (tapering,
   comfort fit, flutes, French and U-pavé scallops), twisted or braided wires, and rows of pavé
   (beads over the stones' edges, shared between rows) or eight-stone settings. Cathedral shoulders
   are arches that leave the band and rise to the basket, open underneath. Channel stones sit in a
@@ -46,9 +49,10 @@ for a pair of rings.
     trace instead of three); when it stops, the picture is refined over 14 steps, each tracing red,
     green and blue separately at slightly varied refractive indices, with sub-pixel offsets.
   - Metal: physically based, in a studio of softboxes rendered once into an environment map;
-    finishes as normal maps at real scale (brushed ones anisotropic). The band builder uses a soft
-    studio (feathered softboxes) so wide polished surfaces show smooth gradients, and a deeper
-    yellow gold (`metalTones`).
+    finishes as normal maps at real scale (brushed ones anisotropic); a deep, warm yellow gold.
+    The band builder uses a soft studio (round lights whose edges blend into the room) so wide
+    polished surfaces, inside and out, show flowing gradients instead of the shapes of the lights;
+    `metalTones` can still override a metal's colour.
   - Ambient occlusion baked per vertex on the GPU each time the design changes: the design is
     seen from 64 directions and each metal vertex counts how much of the studio it can see, so
     crevices under the basket, between prongs and halo stones and inside the band are shaded as in

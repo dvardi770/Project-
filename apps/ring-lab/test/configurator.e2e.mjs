@@ -135,6 +135,18 @@ console.log('ring builder');
     assert.ok(await p.evaluate(() => window.ringBuilder.design.specs.accents.count) > 10);
   });
 
+  await test('three-stone side stones: shape, size and angle', async () => {
+    await p.getByRole('radio', { name: 'Three Stone' }).click();
+    await p.getByRole('radio', { name: 'Tapered baguette' }).click();
+    assert.equal(await p.evaluate(() => window.ringBuilder.design.specs.sides.shape), 'tapered-baguette');
+    const slider = p.getByRole('slider', { name: /Side stone angle/ });
+    await slider.fill('30');
+    await slider.dispatchEvent('change');
+    assert.equal(await p.evaluate(() => window.ringBuilder.design.specs.sides.angle), 30);
+    await p.getByRole('radio', { name: '4 Prong' }).click();
+    assert.equal(await p.getByRole('radio', { name: 'Tapered baguette' }).count(), 0);
+  });
+
   await test('arrow keys move through a group of choices', async () => {
     const ruby = p.getByRole('radiogroup', { name: /Centre stone/ }).getByRole('radio', { name: 'Ruby' });
     await ruby.click();

@@ -622,9 +622,8 @@ document.getElementById('zoom').addEventListener('input', (e) => stage.zoomTo(Nu
 let stage;
 try {
   // The page itself does not scroll (only the menu does), so a drag on the 3D only turns the rings.
-  // A soft studio (smooth reflections on the wide polished surfaces of bands) and a deeper,
-  // warmer yellow gold.
-  stage = new Stage(document.getElementById('stage'), { background: '#ffffff', rotateSpeed: 2.4, touchScroll: false, studio: 'soft', metalTones: { yellow: [0.93, 0.62, 0.26] } });
+  // A soft studio: smooth reflections on the wide polished surfaces of bands.
+  stage = new Stage(document.getElementById('stage'), { background: '#ffffff', rotateSpeed: 2.4, touchScroll: false, studio: 'soft' });
 } catch (e) {
   document.getElementById('loading').textContent = 'This browser cannot show 3D. Try a recent Chrome, Safari or Firefox.';
   throw e;

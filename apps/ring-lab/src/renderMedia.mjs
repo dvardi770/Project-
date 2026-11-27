@@ -119,8 +119,9 @@ const manifest = {
   engine: 'configurator',
   imageSize, halfSize: Math.round(imageSize / 2), videoSize,
   views: views.map((id) => ({ id, label: VIEW_LABELS[id] ?? id })),
-  metals: Object.fromEntries(metals.map((m) => [m, { label: METALS[m].label, swatch: METALS[m].swatch }])),
-  colours: Object.fromEntries([...new Set([...colours, ...shapeColours])].map((c) => [c, { label: COLOURS[c].label, swatch: gemSwatch(GEMS[COLOURS[c].gem].swatch) }])),
+  // A run for some metals or colours keeps those rendered before.
+  metals: { ...previous?.metals, ...Object.fromEntries(metals.map((m) => [m, { label: METALS[m].label, swatch: METALS[m].swatch }])) },
+  colours: { ...previous?.colours, ...Object.fromEntries([...new Set([...colours, ...shapeColours])].map((c) => [c, { label: COLOURS[c].label, swatch: gemSwatch(GEMS[COLOURS[c].gem].swatch) }])) },
   shapes: { ...previous?.shapes },
   combos: [],
 };

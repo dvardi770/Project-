@@ -20,7 +20,7 @@ export function shapeIcon(shape, span = 30) {
   };
   const outer = Array.from({ length: 96 }, (_, i) => at((i / 96) * 2 * Math.PI));
   let body = `<path d="${poly(outer)}"/>`;
-  if (shape === 'emerald' || shape === 'asscher') {
+  if (['emerald', 'asscher', 'baguette', 'tapered-baguette'].includes(shape)) {
     // Step cuts: the steps as nested outlines (an asscher's reach further in).
     for (const s of shape === 'asscher' ? [0.8, 0.62, 0.44] : [0.78, 0.6]) body += `<path d="${poly(Array.from({ length: 96 }, (_, i) => at((i / 96) * 2 * Math.PI, s)))}" stroke-width="0.8"/>`;
   } else {

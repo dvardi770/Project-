@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain JavaScript module without type declarations
-import { cut, caratsOf, widthForCarats, solidFromPlanes, SHAPES } from '../configurator/engine/cuts.mjs';
+import { cut, caratsOf, widthForCarats, solidFromPlanes, SHAPES, SIDE_SHAPES } from '../configurator/engine/cuts.mjs';
 // @ts-expect-error plain JavaScript module without type declarations
 import { buildRing, HEADS, SHANKS } from '../configurator/engine/ring.mjs';
 // @ts-expect-error plain JavaScript module without type declarations
@@ -142,7 +142,8 @@ describe('ring builder', () => {
       const ds = Math.hypot(m[0], m[1], m[2]);
       const [x, y] = [m[12], m[13]];
       // Close beside the centre stone: the side girdle starts just past the centre's.
-      const inner = Math.abs(x) - Math.abs(m[0]) / 2;
+      // The stone's length runs along the band: its z axis (towards the centre) lies in x-y.
+      const inner = Math.abs(x) - Math.abs(m[8]) / 2;
       expect(inner - halfWidth).toBeGreaterThan(0);
       expect(inner - halfWidth).toBeLessThan(1);
       // Lower than the centre, leaning outwards with the band.
@@ -155,9 +156,28 @@ describe('ring builder', () => {
       expect(above).toBeGreaterThan(0.2);
       expect(above).toBeLessThan(1.3);
     }
-    // Side stones about a quarter of the centre's weight each.
+    // Side stones about a quarter of the centre's weight each (the default round sides).
     expect(r.specs.accents.carats).toBeGreaterThan(0.3);
     expect(r.specs.accents.carats).toBeLessThan(0.7);
+  });
+
+  it('offers every side stone shape, at a chosen size and angle, beside the centre', () => {
+    for (const sideShape of Object.keys(SIDE_SHAPES)) for (const shank of ['classic', 'cathedral']) {
+      const r = buildRing({ head: 'three-stone', shank, shape: 'oval', carat: 1.5, sideShape });
+      for (const part of [r.metal.head, r.metal.shank] as Geometry[]) expect(allFinite(part.positions) && allFinite(part.normals), sideShape).toBe(true);
+      const side = r.stones.find((s: { role: string; cut: string }) => s.cut === sideShape && s.role === 'centre' && sideShape !== 'oval') ?? r.stones.filter((s: { cut: string }) => s.cut === sideShape)[1];
+      expect(side?.matrices.length, sideShape).toBe(2);
+      expect(r.specs.sides.shape).toBe(sideShape);
+    }
+    const tb = buildRing({ head: 'three-stone', shape: 'round', carat: 4, sideShape: 'tapered-baguette', sideSize: 3, sideAngle: 25 });
+    // A 5 × 3 tapered baguette, as on a jeweller's drawing, leaning 25°.
+    expect(tb.specs.sides).toMatchObject({ width: 3, angle: 25 });
+    expect(tb.specs.sides.length).toBeCloseTo(5, 0);
+    // Its length runs along the band (x), its width along the finger (z).
+    const m = tb.stones.find((s: { cut: string }) => s.cut === 'tapered-baguette').matrices[0];
+    expect(Math.hypot(m[8], m[9])).toBeGreaterThan(Math.abs(m[10]) + 1);
+    expect(Math.abs(m[2])).toBeGreaterThan(Math.abs(m[0]) + 1);
+    expect(buildRing({ head: 'three-stone', sideAngle: 0 }).specs.sides.angle).toBe(0);
   });
 
   it('counts accent stones and their carats', () => {

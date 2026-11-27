@@ -114,8 +114,10 @@ export function solid(m, build) {
  * A band round the finger. profile(φ) gives the cross-section at angle φ as closed loops of
  * [u, v] points: u outwards from the inner radius r, v along the finger. Points listed in a
  * `sharp` set are hard edges (the surface is split there). uv: u round the band (0–1), v across.
+ * `arc` [φ0, φ1] makes it an open band from φ0 to φ1 (through the bottom), its ends closed flat.
  */
-export function band(m, { r, segments = 256, profile, sharp = [] }) {
+export function band(m, { r, segments = 256, profile, sharp = [], arc = null }) {
+  if (arc) return openBand(m, { r, segments, profile, arc });
   const first = profile(0);
   const n = first.length;
   // Split the loop at hard edges into runs that each get smooth normals.
@@ -136,6 +138,37 @@ export function band(m, { r, segments = 256, profile, sharp = [] }) {
     for (const run of runs) {
       if (run === null) grid(m, segments, n, place, { wrapRows: true, wrapCols: true, uv: (i, j) => [i / segments, j / n] });
       else grid(m, segments, run.length, (i, j) => place(i, run[j]), { wrapRows: true, uv: (i, j) => [i / segments, run[j] / n] });
+    }
+  });
+}
+
+/** A band from φ0 to φ1 with flat ends (see band). */
+function openBand(m, { r, segments, profile, arc: [phi0, phi1] }) {
+  const rows = Math.max(2, Math.round((segments * (phi1 - phi0)) / (2 * Math.PI)) + 1);
+  const phiAt = (i) => phi0 + ((phi1 - phi0) * i) / (rows - 1);
+  const sections = Array.from({ length: rows }, (_, i) => profile(phiAt(i)));
+  const n = sections[0].length;
+  const place = (i, j) => {
+    const phi = phiAt(i), [u, v] = sections[i][j];
+    return [(r + u) * Math.sin(phi), (r + u) * Math.cos(phi), v];
+  };
+  return solid(m, () => {
+    grid(m, rows, n, place, { wrapCols: true, uv: (i, j) => [phiAt(i) / (2 * Math.PI), j / n] });
+    // Flat ends: a fan round each end's middle, wound to face the same way as the sides. Their
+    // normal follows the winding, so it stays right if solid() turns the piece inside out.
+    for (const [i, sign] of [[0, -1], [rows - 1, 1]]) {
+      const phi = phiAt(i);
+      const pts = Array.from({ length: n }, (_, j) => place(i, j));
+      const c = pts.reduce((a, q) => add(a, q), [0, 0, 0]).map((x) => x / n);
+      let N = [0, 0, 0];
+      for (let j = 0; j < n; j++) N = add(N, cross(sub(pts[j], c), sub(pts[(j + 1) % n], c)));
+      N = unit(scale(N, sign < 0 ? 1 : -1));
+      const ci = m.vertex(c, N, [phi / (2 * Math.PI), 0.5]);
+      const ids = pts.map((q, j) => m.vertex(q, N, [phi / (2 * Math.PI), j / n]));
+      for (let j = 0; j < n; j++) {
+        if (sign < 0) m.tri(ci, ids[j], ids[(j + 1) % n]);
+        else m.tri(ci, ids[(j + 1) % n], ids[j]);
+      }
     }
   });
 }
@@ -189,9 +222,10 @@ function frames(path, closed) {
 /**
  * A wire along a path. radius is a number or a function of how far along (0–1). Open wires get
  * rounded ends. `section` (optional) flattens it: [across, deep] multipliers of the radius,
- * with `up` choosing which way "deep" points.
+ * with `up` choosing which way "deep" points. `power` above 2 squares the section off (a
+ * superellipse: 4 is a rounded rectangle, for flat plates and frames).
  */
-export function wire(m, path, { radius, sides = 12, closed = false, section = [1, 1], up = null, cap = true } = {}) {
+export function wire(m, path, { radius, sides = 12, closed = false, section = [1, 1], up = null, cap = true, power = 2 } = {}) {
   const rad = typeof radius === 'function' ? radius : () => radius;
   const F = frames(path, closed);
   if (up) for (const f of F) {
@@ -218,7 +252,9 @@ export function wire(m, path, { radius, sides = 12, closed = false, section = [1
     const t = closed ? k / path.length : k / (path.length - 1);
     const r = rad(t) * Math.max(shrink, 0.0001);
     const a = (j / sides) * 2 * Math.PI;
-    const off = add(scale(f.N, Math.cos(a) * r * section[1]), scale(f.B, Math.sin(a) * r * section[0]));
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const cu = power === 2 ? ca : Math.sign(ca) * Math.abs(ca) ** (2 / power), su = power === 2 ? sa : Math.sign(sa) * Math.abs(sa) ** (2 / power);
+    const off = add(scale(f.N, cu * r * section[1]), scale(f.B, su * r * section[0]));
     return add(add(path[k], off), scale(f.T, push));
   };
   return solid(m, () => grid(m, rows.length, sides, point, { wrapRows: closed, wrapCols: true }));

@@ -221,12 +221,16 @@ class Pass {
  * polished contrast (never black, so no turn of the ring shows black metal); stones get a
  * darker, contrasty set, since dark areas are what make a diamond sparkle.
  */
-/** A tile whose edges fade out, for softboxes with soft edges. */
+/**
+ * Coverage for a soft light: full in the middle, fading out smoothly towards an ellipse's edge,
+ * with no corners, so reflections flow as the ring turns rather than showing squares.
+ */
 function featherTexture() {
   const n = 64, data = new Uint8Array(n * n * 4);
-  const f = (u) => { const a = Math.min(u, 1 - u) / 0.38; return a >= 1 ? 1 : a * a * (3 - 2 * a); };
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const v = Math.round(255 * f((x + 0.5) / n) * f((y + 0.5) / n));
+    const r = Math.hypot(((x + 0.5) / n) * 2 - 1, ((y + 0.5) / n) * 2 - 1);
+    const t = Math.min(Math.max((r - 0.25) / 0.75, 0), 1);
+    const v = Math.round(255 * (1 - t * t * (3 - 2 * t)));
     data.set([v, v, v, 255], (y * n + x) * 4);
   }
   const t = new THREE.DataTexture(data, n, n);
@@ -251,9 +255,12 @@ function studioMaps(renderer, { soft = false } = {}) {
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(60, 48, 24), dome));
   const boxes = [];
   const box = (w, h, x, y, z, round = false) => {
-    // Soft boxes are larger, their edges fading out, so the light they give stays the same.
-    const k = feather && !round ? 1.35 : 1;
-    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w * k, h * k), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, map: round ? null : feather }));
+    // Soft lights are larger and their edges blend into the studio behind them (they fade in
+    // coverage, not to black), so the light they give stays about the same.
+    const k = feather && !round ? 1.6 : 1;
+    const material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    if (feather && !round) Object.assign(material, { alphaMap: feather, transparent: true, depthWrite: false });
+    const m = new THREE.Mesh(round ? new THREE.CircleGeometry(w, 32) : new THREE.PlaneGeometry(w * k, h * k), material);
     m.position.set(x, y, z);
     m.lookAt(0, 0, 0);
     scene.add(m);
@@ -276,7 +283,7 @@ function studioMaps(renderer, { soft = false } = {}) {
     return rt;
   };
   const metalCube = soft
-    ? make({ top: 1.35, mid: 0.62, low: 0.74, keys: [2.6, 4.6, 4.0, 2.2, 3.3, 2.3], spark: 5, flag: 0.3, size: 512 })
+    ? make({ top: 1.25, mid: 0.42, low: 0.6, keys: [3.2, 5.6, 5.0, 2.8, 4.0, 2.8], spark: 5, flag: 0.04, size: 512 })
     : make({ top: 1.3, mid: 0.58, low: 0.72, keys: [2.8, 5.2, 4.4, 2.2, 3.6, 2.4], spark: 7, flag: 0.2, size: 512 });
   const stoneCube = make({ top: 0.75, mid: 0.17, low: 0.05, keys: [3.4, 7.5, 6.0, 2.4, 4.5, 3.0], spark: 16, flag: 0.0, size: 512 });
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -513,7 +520,7 @@ export class Stage {
     });
     m.color.setRGB(...(this.options.metalTones?.[metal] ?? METALS[metal].f0), THREE.LinearSRGBColorSpace);
     // A soft studio: polish keeps a little more bloom in its reflections, as on a real band.
-    if (this.options.studio === 'soft' && finish === 'polished') m.roughness = 0.09;
+    if (this.options.studio === 'soft' && finish === 'polished') m.roughness = 0.07;
     // Brushed and matte metal scatter the studio's light: a touch less bright than polish.
     if (['satin', 'crossbrush', 'matte', 'sand'].includes(finish)) m.envMapIntensity = 0.8;
     let map = finishMap(finish);

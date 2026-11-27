@@ -7,7 +7,7 @@
  * Axes (see geometry.mjs): finger along z, band in the x-y plane, head at +y. Stones' length runs
  * along the finger (z).
  */
-import { cut, caratsOf, widthForCarats, SHAPES } from './cuts.mjs';
+import { cut, caratsOf, widthForCarats, SHAPES, SIDE_SHAPES } from './cuts.mjs';
 import { Mesh, band, wire, bead, loop, curve, superellipse, evenly, matrix, vec } from './geometry.mjs';
 import { GEMS, METALS, gramsOf, metalLabel, usToDiameter } from './materials.mjs';
 
@@ -53,7 +53,29 @@ export const RING_SIZES = Array.from({ length: 17 }, (_, i) => 3 + i * 0.5);
 export const DEFAULT_RING = {
   shape: 'round', carat: 1, gem: 'diamond', head: 'four-prong', shank: 'pave',
   headMetal: 'white', shankMetal: 'white', karat: '14k', accentGem: 'diamond', size: 6,
+  // Three-stone side stones: shape, width across the band in mm (0: sized to the centre stone)
+  // and lean in degrees (−1: down the shoulder to the band).
+  sideShape: 'round', sideSize: 0, sideAngle: -1,
 };
+
+// Side stones' usual width (across the finger) as a share of the centre stone's width. The
+// CAD's 5 × 3 mm tapered baguettes beside a 10.3 mm round are 0.29.
+const SIDE_WIDTH = { round: 0.58, princess: 0.55, trillion: 0.6, oval: 0.48, pear: 0.48, marquise: 0.4, emerald: 0.48, baguette: 0.3, 'tapered-baguette': 0.3, 'half-moon': 0.7 };
+/**
+ * The largest side stone that keeps the centre stone the star: no wider than three quarters of
+ * it, and no longer (along the band) than nine tenths of it.
+ */
+export const sideMax = (shape, centreWidth) => {
+  const ratio = SIDE_SHAPES[shape] ? cut(shape).ratio : 1;
+  return Math.floor(Math.max(1.5, Math.min(0.75 * centreWidth, (0.9 * centreWidth) / Math.max(ratio, 1))) * 10) / 10;
+};
+// Where a side stone's prongs go: towards its corners (directions in its own x, z).
+// Baguettes are set as in the CAD: sloping steeply down the shoulder, their outer end held by a
+// bar on a plate standing on the band. Other side stones follow the band, prongs all round.
+const BAR_ENDS = new Set(['baguette', 'tapered-baguette']);
+const sideProngDirections = (key, ratio) => key === 'trillion' ? [[0, -1], [0.87, 0.5], [-0.87, 0.5]]
+  : key === 'half-moon' ? [[1, 0.35], [-1, 0.35], [0.75, -0.8], [-0.75, -0.8]]
+  : [[1, ratio], [-1, ratio], [1, -ratio], [-1, -ratio]];
 
 // Where the prongs go, as positions on the outline (degrees of each outline's own parameter).
 const PRONGS = {
@@ -90,8 +112,12 @@ export function buildRing(input = {}) {
   const tTop = shank.strands ? shank.strand * 2 : shank.t[1];
   const bandTop = R + tTop;
   const clearance = head.hidden ? 1.25 : head.bezel === 'full' ? 0.7 : 0.85;
-  const yGirdle = bandTop + depth + clearance;
   const rp = clamp(0.066 * Math.min(W, L), 0.33, 0.62);    // prong radius
+  // Three stone (as in the jeweller's CAD): the band stops at the side baskets and the basket's
+  // lower ring lies on the finger in its place, so the centre stone sits low, its culet just over it.
+  // The lower ring is flat and as thick as the bridge that runs into it from the band.
+  const ringT = clamp(tTop * 0.5, 0.7, 0.9), ringW = clamp(rp * 1.5, 0.55, 0.95);
+  const yGirdle = head.sides ? R + ringT + 0.25 + depth : bandTop + depth + clearance;
 
   stones.centre.push(matrix([1, 0, 0], [0, 1, 0], [0, 0, 1], W, [0, yGirdle, 0]));
 
@@ -109,18 +135,38 @@ export function buildRing(input = {}) {
 
   // ── Head ──
   const prongDegs = head.prongs ? PRONGS[o.shape][head.prongs === 6 ? 6 : 4] : [];
+  // Three stone (as the jeweller's CAD has it): the basket's lower ring lies in the band, on the
+  // finger's curve, wider than the band; straight prongs rise from it to the girdle; a flat
+  // collar joins them halfway down the pavilion. The side baskets grow out of the same ring and
+  // collar, so the three read as one setting.
+  const onBand = (q) => [q[0], Math.sqrt(Math.max((R + ringT / 2 + 0.01) ** 2 - q[0] ** 2, 0)), q[2]];
+  const baseOf = (deg) => head.sides ? onBand(beside(deg, 0.45, rp * 0.6, 0)) : beside(deg, 0.72, rp * 0.6, bandTop + 0.25);
+  const girdleOf = (deg) => beside(deg, 0, rp * 0.95, yGirdle);
+  // On the straight line from a prong's base to the girdle, at height y.
+  const prongLine = (deg, y) => {
+    const a = baseOf(deg), b = girdleOf(deg);
+    return vec.add(a, vec.scale(vec.sub(b, a), (y - a[1]) / (b[1] - a[1])));
+  };
+  // The collar: in the CAD from about a third to two thirds of the way down the pavilion.
+  const yCollar = yGirdle - depth * 0.465, collarHalf = clamp(depth * 0.155, 0.35, 0.8);
+  const collarLoop = (count) => Array.from({ length: count }, (_, k) => {
+    const deg = (k / count) * 360, { n } = outlineAt(deg), q = prongLine(deg, yCollar);
+    return [q[0] - n[0] * rp * 0.35, yCollar, q[2] - n[1] * rp * 0.35];
+  });
+  const lowerRing = head.sides ? outlineLoop(64, 0.45, rp * 0.6, 0).map(onBand) : null;
   for (const deg of prongDegs) {
     const tip = beside(deg, 0, 0, 0);
     const { n } = outlineAt(deg);
-    const path = curve([
-      beside(deg, 0.72, rp * 0.6, bandTop + 0.25),
-      beside(deg, 0.5, rp * 1.05, yGirdle - depth * 0.5),
-      beside(deg, 0, rp * 0.95, yGirdle),
-      [tip[0] * 0.965 + n[0] * rp * 0.42, yGirdle + crownH * 0.5 + rp * 0.3, tip[2] * 0.965 + n[1] * rp * 0.42],
-    ], { steps: 7 });
+    const top = [tip[0] * 0.965 + n[0] * rp * 0.42, yGirdle + crownH * 0.5 + rp * 0.3, tip[2] * 0.965 + n[1] * rp * 0.42];
+    const path = head.sides
+      ? curve([baseOf(deg), prongLine(deg, yCollar), girdleOf(deg), top], { steps: 7 })
+      : curve([baseOf(deg), beside(deg, 0.5, rp * 1.05, yGirdle - depth * 0.5), girdleOf(deg), top], { steps: 7 });
     wire(headMesh, path, { radius: (t) => rp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(t * 1.4, 1)) - 0.06 * t), sides: 20 });
   }
-  if (head.prongs) {
+  if (head.sides) {
+    wire(headMesh, collarLoop(96), { radius: collarHalf, section: [Math.min(1, (rp * 0.45) / collarHalf), 1], up: [0, 1, 0], closed: true, sides: 20, power: 4 });
+    wire(headMesh, lowerRing, { radius: ringT / 2, section: [ringW / ringT, 1], up: [0, 1, 0], closed: true, sides: 20, power: 4 });
+  } else if (head.prongs) {
     // Basket: a rail round the pavilion joining the prongs, and a ring at the bottom on the band.
     wire(headMesh, outlineLoop(72, 0.5, rp * 1.1, yGirdle - depth * 0.5), { radius: rp * 0.72, closed: true, sides: 16 });
     wire(headMesh, outlineLoop(48, 0.72, rp * 0.6, bandTop + 0.25), { radius: rp * 0.85, closed: true, sides: 16 });
@@ -188,69 +234,192 @@ export function buildRing(input = {}) {
     }
   }
 
-  // Three stone: a round stone either side of the centre, lower down on the band's shoulders and
-  // tilted outwards with its curve, each in its own four-prong basket that sits on the band,
-  // their girdles close to the centre stone's.
+  // Three stone: a stone either side of the centre (any of SIDE_SHAPES), its wide end tucked
+  // under the centre stone's girdle and sloping down the shoulder to the band, as in the
+  // jeweller's CAD. Its basket is part of the centre's: a frame under its girdle that meets the
+  // centre's collar, inner prongs rising from the centre's lower ring alongside the centre's
+  // prongs, and at the outer end a plate standing on the band with a bar over a baguette's end,
+  // or prongs that stand on the band. Under the stone the gallery stays open.
+  // The side stone's length runs along the band; its +z end faces the centre stone.
   const headReach = head.halo ? clamp(0.15 * Math.min(W, L), 0.9, 1.5) * 1.15 + 0.15 : rp * 2.2;
-  let sideReach = 0, sideFoot = 0, sideRail = null;
+  let sideReach = 0, sideFoot = 0, sideRail = null, sideInfo = null, bandGap = 0, bridge = null;
+  const sideKey = SIDE_SHAPES[o.sideShape] ? o.sideShape : 'round';
   if (head.sides) {
-    const ds = clamp(0.62 * Math.min(W, L), 2.6, 6.5);
-    const sc = cut('round');
-    const sDepth = -sc.bottom * ds, sCrown = sc.top * ds;
-    const srp = clamp(0.07 * ds, 0.28, 0.5);
-    const lift = sDepth + 0.95;                       // girdle above the basket's foot
-    const tilt = 0.6;                                 // how far the stones lean with the band
-    const gap = 0.12 + rp * 0.2;                      // side girdle to centre girdle
-    // The centre basket's mid rail, at its widest along x.
+    const sc = cut(sideKey);
+    const maxWidth = sideMax(sideKey, Math.min(W, L));
+    const autoWidth = clamp((SIDE_WIDTH[sideKey] ?? 0.5) * Math.min(W, L), Math.min(2, maxWidth), maxWidth);
+    const ws = Number(o.sideSize) > 0 ? clamp(Number(o.sideSize), 1.5, maxWidth) : autoWidth;
+    const sDepth = -sc.bottom * ws, sCrown = sc.top * ws;
+    const srp = clamp(0.085 * Math.min(ws, ws * sc.ratio) + 0.17, 0.3, 0.5);
+    // The frame under the girdle: its top a little below it, about as deep as the pavilion.
+    const fTop = Math.max(0.22 * sDepth, 0.22), fH = clamp(0.75 * sDepth, 0.55, 1.15), fT = srp * 0.95;
+    const fMid = -(fTop + fH / 2), fLow = -(fTop + fH);
+    const gap = 0.12 + rp * 0.2;                       // side girdle to centre girdle
+    // The stone's outline at its size: how far it reaches towards the centre and away from it,
+    // and how wide its outer end is.
+    const oc = sc.outline.centre ?? [0, 0];
+    let zFront = -Infinity, zBack = Infinity;
+    for (let i = 0; i < 360; i++) { const { p } = sc.outline.at((i / 360) * 2 * Math.PI); zFront = Math.max(zFront, p[1] * ws); zBack = Math.min(zBack, p[1] * ws); }
+    let endHalf = 0, tOut = 0;
+    for (let i = 0; i < 720; i++) {
+      const t = (i / 720) * 2 * Math.PI, { p } = sc.outline.at(t);
+      if (p[1] * ws <= zBack + 0.08 * (zFront - zBack)) endHalf = Math.max(endHalf, Math.abs(p[0] * ws));
+      if (p[1] * ws <= zBack + 1e-6) tOut = t;
+    }
+    const flatEnd = BAR_ENDS.has(sideKey);
+    const plateT = Math.max(0.7, srp * 1.9), plateHalf = Math.max(endHalf + (flatEnd ? 0.05 : srp * 0.3), srp * 1.3);
+    // The centre stone's half-width along x at its girdle, and down its pavilion. The side
+    // stone's frame may meet the centre's collar (that joins the baskets), not its stone.
     let inner = 0;
     for (let deg = 0; deg < 360; deg += 2) inner = Math.max(inner, Math.abs(beside(deg, 0, 0, 0)[0]));
-    const placeAt = (phi) => {
-      const tBand = shank.strands ? shank.strand * 2 : shankShape(shank, phi).t;
-      const rho = R + tBand + lift - 0.22;            // the foot sinks a little into the band
-      const th = tilt * phi;
-      return { phi, th, c: [rho * Math.sin(phi), rho * Math.cos(phi)], right: [Math.cos(th), -Math.sin(th)], up: [Math.sin(th), Math.cos(th)] };
+    const pavilionAt = (y) => inner * (1 - clamp((yGirdle - y) / depth, 0, 1) * 0.92);
+    // Seen from above, the side stone may only just slip under the girdle's edge.
+    const clearAt = (y) => Math.max(pavilionAt(y), y < yGirdle ? inner * 0.95 : inner) + gap;
+    const bandAt = (phi) => R + (shank.strands ? shank.strand * 2 : shankShape(shank, phi).t);
+    const aboveBand = (q) => Math.hypot(q[0], q[1]) - bandAt(Math.atan2(q[0], q[1]));
+    // Where the stone's points are (in the band's x-y plane) for a placement.
+    const toBand = (s, ly, lz) => [s.c[0] + s.up[0] * ly - s.right[0] * lz, s.c[1] + s.up[1] * ly - s.right[1] * lz];
+    // The lowest points of stone and frame above the band (outer end, middle, culet).
+    const lowest = (s) => Math.min(aboveBand(toBand(s, fLow, zBack)), aboveBand(toBand(s, fLow, (zBack + zFront) / 2)), aboveBand(toBand(s, -sDepth, oc[1] * ws)));
+    const pose = (c, th) => ({ phi: Math.atan2(c[0], c[1]), th, c, right: [Math.cos(th), -Math.sin(th)], up: [Math.sin(th), Math.cos(th)] });
+    // The frame's inner end sits on the centre's collar, its middle level with the collar's, so
+    // the lines of the three baskets run into each other (as in the CAD). xJ: how far out along
+    // the band that joint is; at least the collar's outer face.
+    const collarFace = Math.max(...collarLoop(96).map((q) => q[0])) + rp * 0.45;
+    const zJoin = zFront - fT * 0.05;
+    const placeAt = (xJ, th) => {
+      const up = [Math.sin(th), Math.cos(th)], right = [Math.cos(th), -Math.sin(th)];
+      return pose([xJ - up[0] * fMid + right[0] * zJoin, yCollar - up[1] * fMid + right[1] * zJoin], th);
     };
-    // Lean out along the band until the side stone's inner girdle clears the centre stone.
-    let lo = 0.01, hi = 1.2;
-    for (let k = 0; k < 40; k++) {
-      const mid = (lo + hi) / 2, s = placeAt(mid);
-      if (s.c[0] - s.right[0] * (ds / 2) < inner + gap) lo = mid; else hi = mid;
-    }
-    const s = placeAt(hi);
-    for (const sx of [-1, 1]) {
-      const right = [s.right[0], sx * s.right[1], 0], up = [sx * s.up[0], s.up[1], 0], z = [0, 0, 1];
-      const c = [sx * s.c[0], s.c[1], 0];
-      // A point in the side stone's own frame: x towards its outer side, y up through its table.
-      const local = (lx, ly, lz) => vec.add(vec.add(vec.add(c, vec.scale(right, sx * lx)), vec.scale(up, ly)), vec.scale(z, lz));
-      const at = (deg, f, out, ly) => {
-        const a = deg * DEG, r = (ds / 2) * (1 - f * 0.92) + out;
-        return local(r * Math.cos(a), ly, r * Math.sin(a));
-      };
-      stones.side.push(matrix(right, up, z, ds, c));
-      for (const deg of [45, 135, 225, 315]) {
-        wire(headMesh, curve([
-          at(deg, 0.72, srp * 0.6, -lift),
-          at(deg, 0.5, srp * 1.05, -sDepth * 0.5),
-          at(deg, 0, srp * 0.95, 0),
-          at(deg, 0.035, srp * 0.42, sCrown * 0.5 + srp * 0.3),
-        ], { steps: 7 }), { radius: (t) => srp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(t * 1.4, 1)) - 0.06 * t), sides: 16 });
+    const manual = Number(o.sideAngle) >= 0;
+    const tilt = (xJ) => {
+      if (manual) return clamp(Number(o.sideAngle), 0, 60) * DEG;
+      if (flatEnd) {
+        // A baguette slopes down the shoulder until its outer end nearly meets the band.
+        let lo = 0, hi = 62 * DEG;
+        for (let k = 0; k < 16; k++) { const mid = (lo + hi) / 2; if (lowest(placeAt(xJ, mid)) >= 0.35) lo = mid; else hi = mid; }
+        return lo;
       }
-      wire(headMesh, Array.from({ length: 48 }, (_, k) => at((k / 48) * 360, 0.5, srp * 1.1, -sDepth * 0.5)), { radius: srp * 0.72, closed: true, sides: 12 });
-      wire(headMesh, Array.from({ length: 36 }, (_, k) => at((k / 36) * 360, 0.72, srp * 0.6, -lift)), { radius: srp * 0.85, closed: true, sides: 12 });
-      if (sx === 1) sideRail = { x: at(0, 0.5, srp * 1.1, -sDepth * 0.5)[0], y: at(0, 0.5, srp * 1.1, -sDepth * 0.5)[1] };
+      // Others lean a little less than the band beneath them, tables turned up to the light.
+      let th = 0;
+      for (let k = 0; k < 6; k++) th = 0.7 * placeAt(xJ, th).phi;
+      return th;
+    };
+    const fits = (s) => {
+      // The inner end of the side stone's girdle, and the top of its crown there, clear of the
+      // centre stone; the frame clear of its pavilion; the stone and frame clear of the band.
+      const [px, py] = toBand(s, 0, zFront), [fx, fy] = toBand(s, fLow, zFront);
+      return px >= clearAt(py + sCrown * 0.5) && px >= clearAt(py) && fx >= pavilionAt(fy) + gap + fT && lowest(s) >= 0.3;
+    };
+    // As close in as fits.
+    let lo = collarFace - fT * 0.3, hi = lo + 10;
+    if (!fits(placeAt(lo, tilt(lo)))) {
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (fits(placeAt(mid, tilt(mid)))) hi = mid; else lo = mid; }
+    } else hi = lo;
+    const xJoin = hi;
+    const s = placeAt(xJoin, tilt(xJoin));
+    const prongTs = sideProngDirections(sideKey, sc.ratio).map((d) => {
+      let best = 0, bv = -Infinity;
+      for (let i = 0; i < 720; i++) { const t = (i / 720) * 2 * Math.PI; const { p } = sc.outline.at(t); const v = p[0] * d[0] + p[1] * d[1]; if (v > bv) { bv = v; best = t; } }
+      return { t: best, inner: d[1] > 0 };
+    });
+    // Outer prongs that nearly meet (at a point) become one.
+    let outerTs = prongTs.filter((q) => !q.inner).map((q) => q.t);
+    if (outerTs.length === 2) {
+      const [a, b] = outerTs.map((t) => sc.outline.at(t).p);
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) * ws < srp * 2.6) outerTs = [tOut];
     }
-    const outer = s.c[0] + s.right[0] * (ds / 2 + srp) + s.up[0] * sCrown;
+    let plateFoot = [0, 0], footHalf = 0;
+    for (const sx of [-1, 1]) {
+      const right = [s.right[0], sx * s.right[1], 0], up = [sx * s.up[0], s.up[1], 0];
+      // The stone's own axes: x across the band (along the finger), y up through its table,
+      // z towards the centre stone. Mirrored on the left so both are right-handed.
+      const X = [0, 0, sx], Zc = vec.scale(right, -sx);
+      const c = [sx * s.c[0], s.c[1], 0];
+      const local = (lx, ly, lz) => vec.add(vec.add(vec.add(c, vec.scale(X, lx)), vec.scale(up, ly)), vec.scale(Zc, lz));
+      // A point beside the stone: f of the way down the pavilion, `out` mm outside it.
+      const at = (t, f, out, ly) => {
+        const { p, n } = sc.outline.at(t);
+        const k = 1 - f * 0.92;
+        return local((oc[0] + (p[0] - oc[0]) * k) * ws + n[0] * out, ly, (oc[1] + (p[1] - oc[1]) * k) * ws + n[1] * out);
+      };
+      stones.side.push(matrix(X, up, Zc, ws, c));
+      const prongRadius = (u) => srp * (0.92 + 0.12 * Math.sin(Math.PI * Math.min(u * 1.4, 1)) - 0.06 * u);
+      // Prong tips rise just past the table, hooked over the girdle's edge (as in the CAD).
+      const tip = (t) => at(t, 0.035, srp * 0.42, sCrown * 0.9 + srp * 0.35);
+      // The frame: a flat rail just inside the girdle's edge, under it.
+      const frame = Array.from({ length: 120 }, (_, k) => at((k / 120) * 2 * Math.PI, 0, -fT * 0.55, fMid));
+      wire(headMesh, frame, { radius: fH / 2, section: [fT / fH, 1], up, closed: true, sides: 16, power: 4 });
+      // Inner prongs: from the centre basket's lower ring, alongside its prongs, up past the frame
+      // to the side stone's inner corners.
+      for (const { t, inner: isInner } of prongTs) {
+        if (!isInner) continue;
+        const fr = at(t, 0, srp * 0.6, fMid);
+        let base = lowerRing[0], bd = Infinity;
+        for (const q of lowerRing) { if (q[0] * sx <= 0) continue; const d = Math.hypot(q[0] - fr[0], q[2] - fr[2]); if (d < bd) { bd = d; base = q; } }
+        const gird = at(t, 0, srp * 0.95, 0);
+        // Straight from the ring to the girdle, as in the CAD, then over the crown.
+        wire(headMesh, curve([base, vec.add(base, vec.scale(vec.sub(gird, base), 0.5)), gird, tip(t)], { steps: 6 }), { radius: prongRadius, sides: 16 });
+      }
+      // Where the side stone had to sit further out than the collar, the collar carries on
+      // straight out to the frame, at its own height.
+      // (Its rounded ends are kept inside the collar and the frame.)
+      if (xJoin > collarFace + 0.05) wire(headMesh, [[sx * (collarFace - rp * 0.45), yCollar, 0], [sx * Math.max(xJoin + fT * 0.5 - collarHalf, collarFace), yCollar, 0]], { radius: collarHalf, section: [Math.min(1, (rp * 0.45) / collarHalf), 1], up: [0, 1, 0], sides: 20, power: 4 });
+      // Straight down to the band from a point, its foot sunk a little into the band.
+      const onto = (q) => { const r0 = Math.hypot(q[0], q[1]); return vec.scale([q[0], q[1], q[2] * 0.9], (bandAt(Math.atan2(Math.abs(q[0]), q[1])) - 0.25) / r0); };
+      if (flatEnd) {
+        // The outer end: a plate standing on the band up to the girdle, and a bar over the
+        // baguette's end that holds it.
+        const plateTop = local(0, 0.04, zBack - plateT * 0.5 + 0.12);
+        const foot = onto([plateTop[0], plateTop[1], 0]);
+        if (sx === 1) { plateFoot = foot; footHalf = plateT * 0.5; }
+        wire(headMesh, [foot, plateTop], { radius: plateHalf, section: [1, (plateT / 2) / plateHalf], up: Zc, sides: 24, power: 5 });
+        const ly = sCrown * 0.12 + 0.12, lz = zBack + 0.18;
+        wire(headMesh, [local(-plateHalf, ly, lz), local(plateHalf, ly, lz)], { radius: Math.max(0.36, srp * 0.9), section: [1, 0.42], up, sides: 16 });
+      } else {
+        // Outer prongs: from the band, straight up past the frame to the girdle and over it.
+        for (const t of outerTs) {
+          const fr = at(t, 0, srp * 0.6, fMid), foot = onto(fr);
+          if (sx === 1 && foot[0] > plateFoot[0]) { plateFoot = foot; footHalf = srp; }
+          wire(headMesh, curve([foot, vec.add(foot, vec.scale(vec.sub(fr, foot), 0.5)), fr, at(t, 0, srp * 0.95, 0), tip(t)], { steps: 6 }), { radius: prongRadius, sides: 16 });
+        }
+      }
+      if (sx === 1) { const q = local(0, fMid, zBack); sideRail = { x: q[0], y: q[1] }; }
+    }
+    // The band stops under the plates (or the outer prongs' feet). Between them and the centre's
+    // lower ring two thin rails run on the finger's curve with a slit of air between them: the
+    // airline under the head, as in the CAD.
+    const rTop = R + tTop;
+    const ringEdge = Math.max(...lowerRing.map((q) => q[0]));
+    bandGap = Math.max(Math.atan2(plateFoot[0], plateFoot[1]) - (footHalf * 0.6) / rTop, Math.asin(clamp(ringEdge / rTop, 0, 0.95)) + 0.02);
+    // From the band's end the bridge runs on into the lower ring: where it starts, inside the ring.
+    const wTop = shank.strands ? shank.strand * 3 : shankShape(shank, bandGap).w;
+    let start = Infinity;
+    for (const q of lowerRing) if (q[0] > 0 && Math.abs(q[2]) < wTop / 2) start = Math.min(start, q[0]);
+    bridge = { from: Math.asin(clamp((start - ringW * 0.25) / (R + ringT / 2), 0, 0.99)), slit: Math.max(0.2, wTop * 0.12), t: ringT };
+    if (shank.strands) {
+      // Twisted strands: two thin rails on the finger's curve instead.
+      const railW = wTop * 0.42;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const z = sz * (wTop / 2 - railW / 2), rr = R + ringT / 2, a0 = bridge.from, a1 = bandGap + 0.03;
+        if (a1 <= a0 + 0.01) continue;
+        const path = Array.from({ length: 25 }, (_, k) => { const a = a0 + ((a1 - a0) * k) / 24; return [sx * rr * Math.sin(a), rr * Math.cos(a), z]; });
+        wire(headMesh, path, { radius: ringT / 2, section: [railW / ringT, 1], up: [sx * Math.sin((a0 + a1) / 2), Math.cos((a0 + a1) / 2), 0], sides: 16, power: 4 });
+      }
+    }
+    const outer = Math.max(s.c[0] + s.right[0] * (-zBack) + Math.abs(s.up[0]) * sCrown, plateFoot[0] + plateT);
     sideReach = Math.max(0, outer - (W / 2 + headReach));
-    // Where the side basket's foot meets the band, measured along the band.
-    sideFoot = (R + tTop) * Math.sin(s.phi) + (ds / 2) * 0.4 + srp;
+    // Where the side basket's plate meets the band, measured along the band.
+    sideFoot = (R + tTop) * Math.asin(clamp(plateFoot[0] / Math.hypot(plateFoot[0], plateFoot[1]), 0, 1)) + plateT;
+    sideInfo = { shape: sideKey, width: round(ws, 2), length: round(ws * sc.ratio, 2), angle: Math.round(s.th / DEG), carats: round(caratsOf(sideKey, ws, accentGemDensity(o)), 3), maxWidth };
   }
 
   // ── Shank ──
   const headHalf = Math.max(0.36 * W + rp * 1.6, head.halo ? 0.2 * W : 0, sideFoot) + 0.25;   // head's footprint on the band (along x)
   const phiHead = Math.asin(clamp(headHalf / (R + tTop), 0, 0.95));
   const channel = shank.channel ? channelPlaces(R, shank, phiHead) : null;
-  if (shank.strands) strandsShank(shankMesh, R, shank);
-  else plainShank(shankMesh, R, shank, { phiHead, channel });
+  if (shank.strands) strandsShank(shankMesh, R, shank, bandGap);
+  else plainShank(shankMesh, R, shank, { phiHead, channel, gap: bandGap, bridge });
   let paveFrom = phiHead;
   if (shank.cathedral) {
     // Shoulders that leave the band and sweep up in an arch to the basket, leaving an open
@@ -264,7 +433,7 @@ export function buildRing(input = {}) {
 
   // ── Specs ──
   const gem = GEMS[o.gem], accentGem = GEMS[o.accentGem];
-  const accentCarats = sumCarats(stones.accent, 'round-accent', accentGem.density) + sumCarats(stones.channel, 'princess-accent', accentGem.density) + sumCarats(stones.side, 'round', accentGem.density);
+  const accentCarats = sumCarats(stones.accent, 'round-accent', accentGem.density) + sumCarats(stones.channel, 'princess-accent', accentGem.density) + sumCarats(stones.side, sideKey, accentGem.density);
   const centreCarats = caratsOf(o.shape, W, gem.density);
   const headVolume = headMesh.volume, shankVolume = shankMesh.volume;
   const specs = {
@@ -276,6 +445,7 @@ export function buildRing(input = {}) {
       shank: { metal: o.shankMetal, label: metalLabel(o.shankMetal, o.karat), grams: round(gramsOf(shankVolume, o.shankMetal, o.karat), 2) },
     },
     head: o.head, shank: o.shank, size: o.size,
+    sides: sideInfo,
   };
   specs.metal.grams = round(specs.metal.head.grams + specs.metal.shank.grams, 2);
 
@@ -286,7 +456,7 @@ export function buildRing(input = {}) {
       { cut: o.shape, gem: o.gem, role: 'centre', matrices: stones.centre },
       { cut: 'round-accent', gem: o.accentGem, role: 'accent', matrices: stones.accent },
       { cut: 'princess-accent', gem: o.accentGem, role: 'accent', matrices: stones.channel },
-      { cut: 'round', gem: o.accentGem, role: 'centre', matrices: stones.side },
+      { cut: sideKey, gem: o.accentGem, role: 'centre', matrices: stones.side },
     ].filter((s) => s.matrices.length),
     specs,
     frame: {
@@ -306,6 +476,7 @@ export function buildRing(input = {}) {
 }
 
 const round = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
+const accentGemDensity = (o) => (GEMS[o.accentGem] ?? GEMS.diamond).density;
 const sumCarats = (list, key, density) => list.reduce((s, m) => s + caratsOf(key, Math.hypot(m[0], m[1], m[2]), density), 0);
 
 /**
@@ -393,7 +564,7 @@ function shankShape(shank, phi) {
   return { w, t, a };
 }
 
-function plainShank(m, R, shank, { phiHead, channel }) {
+function plainShank(m, R, shank, { phiHead, channel, gap = 0, bridge = null }) {
   const count = channel ? 112 : 48;
   const outerPow = shank.knife ? 2 : 2.4, innerPow = 5;
   const pave = shank.pave;
@@ -435,24 +606,61 @@ function plainShank(m, R, shank, { phiHead, channel }) {
     return pts;
   };
   const segments = shank.flutes ? 576 : shank.notch || channel ? 512 : 256;
-  band(m, { r: R, segments, profile });
+  band(m, { r: R, segments, profile, arc: gap > 0 ? [gap, 2 * Math.PI - gap] : null });
+  if (bridge && gap > bridge.from + 0.01) {
+    // Under a three-stone head (as in the CAD) the band runs on to the basket's lower ring as a
+    // bridge: its own cross-section split down the middle by a slit (the airline), thinning
+    // smoothly to the ring, so there is no step where the band ends.
+    const { from, slit, t: tEnd } = bridge, to = gap + 0.004;
+    for (const half of [1, -1]) {
+      const piece = (phi) => {
+        const a = phi > Math.PI ? 2 * Math.PI - phi : phi;
+        const t = shankShape(shank, phi).t;
+        const k = (tEnd + (t - tEnd) * smooth(from, to, a)) / t;
+        return halfSection(profile(phi), half, slit / 2, 40).map(([u, v]) => [u * k, v]);
+      };
+      band(m, { r: R, segments: 512, profile: piece, arc: [from, to] });
+      band(m, { r: R, segments: 512, profile: piece, arc: [2 * Math.PI - to, 2 * Math.PI - from] });
+    }
+  }
 }
 
-/** Twisted or braided wires, round the finger. */
-function strandsShank(m, R, shank) {
+/**
+ * One side of a closed cross-section [u, v], cut along v = side · cutAt, as `count` points evenly
+ * spaced round it, starting where the cut meets the inside (so every section lines up).
+ */
+function halfSection(loop, side, cutAt, count) {
+  const n = loop.length, keep = (q) => q[1] * side >= cutAt, out = [];
+  for (let k = 0; k < n; k++) {
+    const a = loop[k], b = loop[(k + 1) % n];
+    if (keep(a)) out.push(a);
+    if (keep(a) !== keep(b)) {
+      const f = (side * cutAt - a[1]) / (b[1] - a[1]);
+      out.push([a[0] + (b[0] - a[0]) * f, side * cutAt, 'cut']);
+    }
+  }
+  // Start at the cut point nearer the finger.
+  const cuts = out.map((q, i) => (q[2] === 'cut' ? i : -1)).filter((i) => i >= 0);
+  const first = cuts.reduce((best, i) => (out[i][0] < out[best][0] ? i : best), cuts[0]);
+  const ring = [...out.slice(first), ...out.slice(0, first)].map((q) => [q[0], q[1], 0]);
+  return evenly(ring, count).points.map((q) => [q[0], q[1]]);
+}
+
+/** Twisted or braided wires, round the finger (from `gap` to 2π − gap: none under a three-stone head). */
+function strandsShank(m, R, shank, gap = 0) {
   const rc = R + shank.strand * 1.05;
   // Strands overlap a little so they read as one twisted band, not separate wires.
   const a = shank.strand * (shank.strands === 2 ? 0.72 : 0.82);
   for (let s = 0; s < shank.strands; s++) {
     const path = [];
     const N = 720;
-    for (let i = 0; i < N; i++) {
-      const phi = (i / N) * 2 * Math.PI;
+    for (let i = 0; i < N + (gap ? 1 : 0); i++) {
+      const phi = gap ? gap + (i / N) * (2 * Math.PI - 2 * gap) : (i / N) * 2 * Math.PI;
       const th = phi * shank.twists + (s * 2 * Math.PI) / shank.strands;
       const r = rc + a * Math.cos(th);
       path.push([r * Math.sin(phi), r * Math.cos(phi), a * Math.sin(th)]);
     }
-    wire(m, path, { radius: shank.strand, closed: true, sides: 12 });
+    wire(m, path, { radius: shank.strand, closed: !gap, sides: 12 });
   }
 }
 

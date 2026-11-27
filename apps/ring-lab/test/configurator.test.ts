@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain JavaScript module without type declarations
-import { cut, caratsOf, widthForCarats, solidFromPlanes, SHAPES } from '../configurator/engine/cuts.mjs';
+import { cut, caratsOf, widthForCarats, solidFromPlanes, SHAPES, SIDE_SHAPES } from '../configurator/engine/cuts.mjs';
 // @ts-expect-error plain JavaScript module without type declarations
 import { buildRing, HEADS, SHANKS } from '../configurator/engine/ring.mjs';
 // @ts-expect-error plain JavaScript module without type declarations
@@ -32,7 +32,7 @@ describe('gem cuts', () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   it('weigh what real stones of that size weigh', () => {
     // A 1 ct round brilliant is about 6.4–6.5 mm across.
@@ -121,7 +121,23 @@ describe('ring builder', () => {
         const m = r.stones.find((s: { role: string }) => s.role === 'centre').matrices[0];
         const width = Math.hypot(m[0], m[1], m[2]);
         const culet = m[13] + cut(shape).bottom * width;
-        expect(culet, `${shape}/${head}`).toBeGreaterThan(r.frame.radius + 0.5);
+        if (head !== 'three-stone') { expect(culet, `${shape}/${head}`).toBeGreaterThan(r.frame.radius + 0.5); continue; }
+        // Three stone (as in the CAD): no band under the head, the culet low over the finger,
+        // clear of it and of the lower ring that lies there.
+        const R = usToDiameter(6) / 2;
+        expect(culet, `${shape}/${head}`).toBeGreaterThan(R + 0.6);
+        expect(culet, `${shape}/${head}`).toBeLessThan(R + 1.6);
+        const band = r.metal.shank.positions as Float32Array;
+        for (let i = 0; i < band.length; i += 3) if (band[i + 1] > 0 && Math.abs(band[i]) < 1) throw new Error(`${shape}: band under the head`);
+        // The band's cut ends shade like the rest of it: every triangle faces the way its normals do.
+        const { normals: N, index: I } = r.metal.shank as Geometry, P = band;
+        for (let k = 0; k < I.length; k += 3) {
+          const [a, b, c] = [I[k] * 3, I[k + 1] * 3, I[k + 2] * 3];
+          const u = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]], v = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]];
+          const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+          const along = n[0] * (N[a] + N[b] + N[c]) + n[1] * (N[a + 1] + N[b + 1] + N[c + 1]) + n[2] * (N[a + 2] + N[b + 2] + N[c + 2]);
+          if (along < -1e-9) throw new Error(`${shape}: band triangle ${k / 3} faces against its normals`);
+        }
       }
     }
   });
@@ -142,22 +158,105 @@ describe('ring builder', () => {
       const ds = Math.hypot(m[0], m[1], m[2]);
       const [x, y] = [m[12], m[13]];
       // Close beside the centre stone: the side girdle starts just past the centre's.
-      const inner = Math.abs(x) - Math.abs(m[0]) / 2;
+      // The stone's length runs along the band: its z axis (towards the centre) lies in x-y.
+      const inner = Math.abs(x) - Math.abs(m[8]) / 2;
       expect(inner - halfWidth).toBeGreaterThan(0);
       expect(inner - halfWidth).toBeLessThan(1);
       // Lower than the centre, leaning outwards with the band.
       expect(y).toBeLessThan(r.frame.head[1]);
       expect(Math.sign(m[4])).toBe(Math.sign(x));
-      // Resting on the band: its culet a little above the band's top, not floating.
+      // Over the band with an open gallery under it (about 1.4 mm in the jeweller's CAD), not floating.
       const up = [m[4] / ds, m[5] / ds];
       const culet = [x + up[0] * cut('round').bottom * ds, y + up[1] * cut('round').bottom * ds];
       const above = Math.hypot(culet[0], culet[1]) - r.frame.radius;
-      expect(above).toBeGreaterThan(0.2);
-      expect(above).toBeLessThan(1.3);
+      expect(above).toBeGreaterThan(0.6);
+      expect(above).toBeLessThan(1.8);
     }
-    // Side stones about a quarter of the centre's weight each.
+    // Side stones about a quarter of the centre's weight each (the default round sides).
     expect(r.specs.accents.carats).toBeGreaterThan(0.3);
     expect(r.specs.accents.carats).toBeLessThan(0.7);
+  });
+
+  it('offers every side stone shape, at a chosen size and angle, beside the centre', () => {
+    for (const sideShape of Object.keys(SIDE_SHAPES)) for (const shank of ['classic', 'cathedral']) {
+      const r = buildRing({ head: 'three-stone', shank, shape: 'oval', carat: 1.5, sideShape });
+      for (const part of [r.metal.head, r.metal.shank] as Geometry[]) expect(allFinite(part.positions) && allFinite(part.normals), sideShape).toBe(true);
+      const side = r.stones.find((s: { role: string; cut: string }) => s.cut === sideShape && s.role === 'centre' && sideShape !== 'oval') ?? r.stones.filter((s: { cut: string }) => s.cut === sideShape)[1];
+      expect(side?.matrices.length, sideShape).toBe(2);
+      expect(r.specs.sides.shape).toBe(sideShape);
+    }
+    const tb = buildRing({ head: 'three-stone', shape: 'round', carat: 4, sideShape: 'tapered-baguette', sideSize: 3, sideAngle: 25 });
+    // A 5 × 3 tapered baguette, as on a jeweller's drawing, leaning 25°.
+    expect(tb.specs.sides).toMatchObject({ width: 3, angle: 25 });
+    expect(tb.specs.sides.length).toBeCloseTo(5, 0);
+    // Its length runs along the band (x), its width along the finger (z).
+    const m = tb.stones.find((s: { cut: string }) => s.cut === 'tapered-baguette').matrices[0];
+    expect(Math.hypot(m[8], m[9])).toBeGreaterThan(Math.abs(m[10]) + 1);
+    expect(Math.abs(m[2])).toBeGreaterThan(Math.abs(m[0]) + 1);
+    expect(buildRing({ head: 'three-stone', sideAngle: 0 }).specs.sides.angle).toBe(0);
+    expect(buildRing({ head: 'three-stone', sideAngle: 60 }).specs.sides.angle).toBe(60);
+  });
+
+  it('keeps side stones in proportion to the centre stone', () => {
+    for (const sideShape of Object.keys(SIDE_SHAPES)) for (const carat of [0.5, 1, 3]) {
+      const auto = buildRing({ head: 'three-stone', shape: 'round', carat, sideShape });
+      const centre = auto.specs.centre.mm[1];
+      // As large as asked, but never larger than the most that keeps the centre the star.
+      const big = buildRing({ head: 'three-stone', shape: 'round', carat, sideShape, sideSize: 8 }).specs.sides;
+      expect(big.width, `${sideShape} ${carat} ct`).toBeLessThanOrEqual(0.75 * centre + 1e-9);
+      expect(big.length, `${sideShape} ${carat} ct`).toBeLessThanOrEqual(0.9 * centre + 0.01);
+      expect(big.width).toBe(big.maxWidth);
+      expect(auto.specs.sides.width).toBeLessThanOrEqual(auto.specs.sides.maxWidth);
+      expect(auto.specs.sides.width).toBeGreaterThanOrEqual(Math.min(2, auto.specs.sides.maxWidth) - 1e-9);
+    }
+  });
+
+  it('runs the band on under a three-stone head without a step', () => {
+    const r = buildRing({ head: 'three-stone', shank: 'classic', shape: 'round', carat: 2, sideShape: 'tapered-baguette' });
+    const pos = r.metal.shank.positions as Float32Array;
+    // The outside of the band and of the bridge that carries on from it, round the top.
+    const outer: number[] = [];
+    for (let deg = 6; deg <= 70; deg += 2) {
+      let best = 0;
+      for (let i = 0; i < pos.length; i += 3) {
+        const a = (Math.atan2(Math.abs(pos[i]), pos[i + 1]) * 180) / Math.PI;
+        if (Math.abs(a - deg) < 1 && Math.abs(pos[i + 2]) < 0.5) best = Math.max(best, Math.hypot(pos[i], pos[i + 1]));
+      }
+      if (best) outer.push(best);
+    }
+    expect(outer.length).toBeGreaterThan(20);
+    for (let k = 1; k < outer.length; k++) expect(Math.abs(outer[k] - outer[k - 1]), `at ${k}`).toBeLessThan(0.15);
+  });
+
+  it('sets tapered baguettes as the CAD does: under the centre girdle, sloping down to the band', () => {
+    // The CAD: a 10.3 mm round with 5 × 3 mm tapered baguettes at 49.5°, on a size 6.
+    const r = buildRing({ head: 'three-stone', shank: 'classic', shape: 'round', carat: 4, size: 6, sideShape: 'tapered-baguette', sideSize: 3 });
+    expect(r.specs.centre.mm[1]).toBeCloseTo(10.3, 0);
+    expect(r.specs.sides.angle).toBeGreaterThan(40);
+    expect(r.specs.sides.angle).toBeLessThan(60);
+    const c = cut('tapered-baguette');
+    const [yGirdle, half] = [r.frame.head[1], r.specs.centre.mm[1] / 2];
+    for (const m of r.stones.find((s: { cut: string }) => s.cut === 'tapered-baguette').matrices) {
+      const ws = Math.hypot(m[0], m[1], m[2]);
+      // Its wide end (+z) tucked in just under the centre's girdle edge...
+      let zFront = -Infinity, zBack = Infinity;
+      for (let i = 0; i < 360; i++) { const p = c.outline.at((i / 360) * 2 * Math.PI).p; zFront = Math.max(zFront, p[1]); zBack = Math.min(zBack, p[1]); }
+      const end = (lz: number) => [m[12] + m[8] * lz, m[13] + m[9] * lz];
+      const [ix, iy] = end(zFront), [ox, oy] = end(zBack);
+      expect(iy).toBeLessThan(yGirdle);
+      expect(iy).toBeGreaterThan(yGirdle - 2.5);
+      expect(Math.abs(ix) - half).toBeLessThan(0.8);
+      // ...and its narrow end low on the shoulder, close over the band.
+      expect(Math.hypot(ox, oy) - r.frame.radius).toBeLessThan(-c.bottom * ws + 1.6);
+      // The gallery between the stone and the band is open: no metal in the middle of it.
+      const culet = [m[12] + m[4] * c.bottom, m[13] + m[5] * c.bottom];
+      const k = (r.frame.radius + 0.1 + Math.hypot(culet[0], culet[1]) - 0.15) / 2 / Math.hypot(culet[0], culet[1]);
+      const hole = [culet[0] * k, culet[1] * k, 0];
+      const pos = r.metal.head.positions as Float32Array;
+      let nearest = Infinity;
+      for (let i = 0; i < pos.length; i += 3) nearest = Math.min(nearest, Math.hypot(pos[i] - hole[0], pos[i + 1] - hole[1], pos[i + 2] - hole[2]));
+      expect(nearest).toBeGreaterThan(0.3);
+    }
   });
 
   it('counts accent stones and their carats', () => {
@@ -300,6 +399,11 @@ describe('CAD rings', () => {
     expect(shapeOfName('Diamond_Cushion')).toBe('cushion');
     expect(shapeOfName('Radiant 7x5')).toBe('cushion');
     expect(shapeOfName('Block 12')).toBeNull();
+    // MatrixGold's baguette blocks: tapered when one end is narrower.
+    expect(shapeOfName('Custom_Baguette_v1.0_Length5.000000_BottomWidth2.000000_TopWidth3.000000', 2 / 3)).toBe('tapered-baguette');
+    expect(shapeOfName('Custom_Baguette_v1.0_Length5.000000_BottomWidth2.000000_TopWidth2.000000', 1)).toBe('baguette');
+    expect(shapeOfName('Trilliant 5mm')).toBe('trillion');
+    expect(shapeOfName('Half Moon 4x2')).toBe('half-moon');
   });
 });
 

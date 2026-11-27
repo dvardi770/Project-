@@ -68,7 +68,7 @@ async function designFor(spec) {
 
 let stage;
 try {
-  stage = new Stage(document.getElementById('stage'), { background: params.get('background') || '#ffffff', autoRotate: params.get('rotate') === '1', rotateSpeed: 2.6, adaptive: !params.has('render') });
+  stage = new Stage(document.getElementById('stage'), { background: params.get('background') || '#ffffff', autoRotate: params.get('rotate') === '1', rotateSpeed: 2.6, adaptive: !params.has('render'), studio: 'soft' });
   // Rendering media: frames are made on request only, at a fixed resolution.
   if (params.has('render')) stage.renderer.setAnimationLoop(null);
 } catch (e) {

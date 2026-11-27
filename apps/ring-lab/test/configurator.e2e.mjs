@@ -73,7 +73,14 @@ async function swipeUp(p, selector, menu) {
   const box = await p.locator(selector).first().boundingBox();
   const x = box.x + box.width / 2, y0 = box.y + box.height * 0.8, y1 = box.y + box.height * 0.2;
   const where = () => p.evaluate((m) => ({ page: scrollY, menu: document.querySelector(m).scrollTop, stage: document.querySelector('.stage-wrap').getBoundingClientRect().top }), menu);
-  const before = await where();
+  // Let any earlier fling come to rest first, so it is not counted as this swipe's movement.
+  let before = await where();
+  for (let i = 0; i < 20; i++) {
+    await p.waitForTimeout(150);
+    const now = await where();
+    if (JSON.stringify(now) === JSON.stringify(before)) break;
+    before = now;
+  }
   const cdp = await p.context().newCDPSession(p);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
   for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 + ((y1 - y0) * i) / 10 }] });
@@ -133,6 +140,21 @@ console.log('ring builder');
     await p.getByRole('radio', { name: 'Halo', exact: true }).click();
     await p.getByRole('heading', { name: /Accent stones/ }).waitFor();
     assert.ok(await p.evaluate(() => window.ringBuilder.design.specs.accents.count) > 10);
+  });
+
+  await test('three-stone side stones: shape, size and angle', async () => {
+    await p.getByRole('radio', { name: 'Three Stone' }).click();
+    await p.getByRole('radio', { name: 'Tapered baguette' }).click();
+    assert.equal(await p.evaluate(() => window.ringBuilder.design.specs.sides.shape), 'tapered-baguette');
+    const slider = p.getByRole('slider', { name: /Side stone angle/ });
+    // Left to itself a baguette slopes steeply down the shoulder, as in the jeweller's CAD.
+    assert.ok(await p.evaluate(() => window.ringBuilder.design.specs.sides.angle) > 30);
+    await p.getByText(/down the shoulder/).first().waitFor();
+    await slider.fill('30');
+    await slider.dispatchEvent('change');
+    assert.equal(await p.evaluate(() => window.ringBuilder.design.specs.sides.angle), 30);
+    await p.getByRole('radio', { name: '4 Prong' }).click();
+    assert.equal(await p.getByRole('radio', { name: 'Tapered baguette' }).count(), 0);
   });
 
   await test('arrow keys move through a group of choices', async () => {

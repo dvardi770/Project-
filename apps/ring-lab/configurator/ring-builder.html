@@ -63,6 +63,8 @@
   .chips .choice { flex-direction: row; padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; }
   .chips .choice span { font-size: 13px; max-width: none; }
   .chips .choice[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .section input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .section .ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); }
   select { width: 100%; max-width: 280px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 10px; }
   .note { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
   .buy { position: sticky; bottom: 0; z-index: 6; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
@@ -172,7 +174,7 @@
 <script type="module">
 import { Stage } from './engine/stage.mjs';
 import { buildRing, HEADS, SHANKS, CARATS, RING_SIZES, DEFAULT_RING } from './engine/ring.mjs';
-import { SHAPES } from './engine/cuts.mjs';
+import { SHAPES, SIDE_SHAPES } from './engine/cuts.mjs';
 import { GEMS, METALS, RING_METALS, metalLabel, usToDiameter } from './engine/materials.mjs';
 import { priceRing, money } from './engine/pricing.mjs';
 import { shapeIcon, caratIcon, HEAD_ICONS, SHANK_ICONS, gemSwatch } from './engine/icons.mjs';
@@ -182,7 +184,7 @@ if (params.has('embed')) document.documentElement.classList.add('embed');
 
 // Choices: defaults, then the link's (#shape=oval&carat=1.5…), then ?query for embedding.
 const state = { ...DEFAULT_RING };
-const NUMERIC = new Set(['carat', 'size']);
+const NUMERIC = new Set(['carat', 'size', 'sideSize', 'sideAngle']);
 function readLink(source) {
   for (const [k, v] of source) if (k in DEFAULT_RING) state[k] = NUMERIC.has(k) ? Number(v) : v;
 }
@@ -194,6 +196,15 @@ const sections = [
   { key: 'carat', title: 'Carat', view: 'head', options: () => CARATS.map((c) => ({ value: c, label: `${c.toFixed(2)} ct`, icon: caratIcon(state.shape, c) })), shown: (v) => `${v.toFixed(2)} ct` },
   { key: 'gem', title: 'Centre stone', view: 'top', kind: 'swatch', options: () => Object.entries(GEMS).map(([value, g]) => ({ value, label: g.label, swatch: gemSwatch(g.swatch) })) },
   { key: 'head', title: 'Head', view: 'head', options: () => Object.entries(HEADS).map(([value, h]) => ({ value, label: h.label, icon: HEAD_ICONS[value] })) },
+  // Three stone: the side stones' shape, size and lean.
+  { key: 'sideShape', title: 'Side stones', view: 'head', options: () => Object.entries(SIDE_SHAPES).map(([value, s]) => ({ value, label: s.label, icon: shapeIcon(value) })), hidden: () => state.head !== 'three-stone' },
+  // Up to the largest that keeps the centre stone the star (it follows the centre's size and the side shape).
+  { key: 'sideSize', title: 'Side stone size', kind: 'range', min: 1.5, max: () => design?.specs.sides?.maxWidth ?? 5, step: 0.1, value: () => design?.specs.sides?.width ?? 3,
+    shown: () => { const d = design?.specs.sides; return d ? `${d.length.toFixed(1)} × ${d.width.toFixed(1)} mm · ${d.carats.toFixed(2)} ct each` : ''; },
+    ends: ['Smaller', 'Larger'], hidden: () => state.head !== 'three-stone' },
+  { key: 'sideAngle', title: 'Side stone angle', kind: 'range', min: 0, max: 60, step: 1, value: () => design?.specs.sides?.angle ?? 15,
+    shown: () => { const a = design?.specs.sides?.angle ?? 0; return state.sideAngle < 0 ? `${a}° · ${/baguette/.test(state.sideShape) ? 'down the shoulder' : 'following the band'}` : a === 0 ? 'Flat (0°)' : `${a}°`; },
+    ends: ['Flat', 'Steep'], hidden: () => state.head !== 'three-stone' },
   { key: 'shank', title: 'Shank', view: 'shank', options: () => Object.entries(SHANKS).map(([value, s]) => ({ value, label: s.label, icon: SHANK_ICONS[value] })) },
   { key: 'shankMetal', title: 'Shank metal', view: 'overview', kind: 'swatch', options: () => RING_METALS.map((value) => ({ value, label: METALS[value].label, swatch: METALS[value].swatch })) },
   { key: 'headMetal', title: 'Head metal', view: 'head', kind: 'swatch', options: () => RING_METALS.map((value) => ({ value, label: METALS[value].label, swatch: METALS[value].swatch })) },
@@ -209,13 +220,32 @@ function renderOptions() {
     if (sec.hidden?.()) continue;
     const el = document.createElement('section');
     el.className = 'section';
-    const current = sec.options().find((o) => o.value === state[sec.key]);
+    const current = sec.options?.().find((o) => o.value === state[sec.key]);
     const h = document.createElement('h2');
     h.id = `h-${sec.key}`;
     h.innerHTML = `${sec.title}: <b></b>`;
     h.querySelector('b').textContent = current?.label ?? (sec.shown ? sec.shown(state[sec.key]) : state[sec.key]);
     el.append(h);
-    if (sec.kind === 'select') {
+    if (sec.kind === 'range') {
+      // A slider: the ring follows while it is dragged; the menu is redrawn when it is let go.
+      h.querySelector('b').textContent = sec.shown();
+      const input = document.createElement('input');
+      const bound = (b) => (typeof b === 'function' ? b() : b);
+      Object.assign(input, { type: 'range', min: bound(sec.min), max: bound(sec.max), step: sec.step, value: sec.value() });
+      input.setAttribute('aria-labelledby', h.id);
+      let queued = false;
+      input.addEventListener('input', () => {
+        state[sec.key] = Number(input.value);
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => { queued = false; update({ options: false }); h.querySelector('b').textContent = sec.shown(); });
+      });
+      input.addEventListener('change', () => update());
+      const ends = document.createElement('div');
+      ends.className = 'ends';
+      for (const t of sec.ends ?? []) { const x = document.createElement('span'); x.textContent = t; ends.append(x); }
+      el.append(input, ends);
+    } else if (sec.kind === 'select') {
       const sel = document.createElement('select');
       sel.setAttribute('aria-labelledby', h.id);
       for (const o of sec.options()) sel.append(new Option(o.label, o.value, false, o.value === state[sec.key]));
@@ -282,7 +312,7 @@ function choose(sec, value) {
 let headMetalChosen = new URLSearchParams(location.hash.slice(1)).has('headMetal') && state.headMetal !== state.shankMetal;
 
 let design = null, price = null;
-function update() {
+function update({ options = true } = {}) {
   design = buildRing(state);
   stage.setDesign({
     groups: [{
@@ -295,7 +325,7 @@ function update() {
     frame: design.frame,
   });
   price = priceRing({ ...design.specs, karat: state.karat });
-  renderOptions();
+  if (options) renderOptions();
   renderPrice();
   history.replaceState(null, '', `${location.pathname}${location.search}#${new URLSearchParams(Object.entries(state).map(([k, v]) => [k, String(v)]))}`);
   scheduleThumbs();
@@ -406,7 +436,7 @@ async function makeThumbs() {
 let stage;
 try {
   // The page itself does not scroll (only the menu does), so a drag on the 3D only turns the ring.
-  stage = new Stage(document.getElementById('stage'), { background: getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#ffffff', touchScroll: false });
+  stage = new Stage(document.getElementById('stage'), { background: getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#ffffff', touchScroll: false, studio: 'soft' });
 } catch (e) {
   document.getElementById('loading').textContent = 'This browser cannot show 3D. Try a recent Chrome, Safari or Firefox.';
   throw e;

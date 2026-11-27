@@ -12,11 +12,15 @@
 import { decodeMesh } from './meshDecode.mjs';
 import { cut } from './cuts.mjs';
 
-const SHAPE_NAMES = ['round', 'oval', 'cushion', 'emerald', 'princess', 'pear', 'marquise', 'radiant', 'asscher', 'heart'];
-const NEAREST = { radiant: 'cushion', asscher: 'emerald', heart: 'pear' };
-/** The builder's cut for a CAD stone's block name ("Diamond_Oval"), or null. */
-export const shapeOfName = (name = '') => {
+const SHAPE_NAMES = ['round', 'oval', 'cushion', 'emerald', 'princess', 'pear', 'marquise', 'radiant', 'asscher', 'heart', 'baguette', 'trillion', 'trilliant', 'halfmoon', 'half moon', 'half_moon', 'half-moon'];
+const NEAREST = { radiant: 'cushion', asscher: 'emerald', heart: 'pear', trilliant: 'trillion', halfmoon: 'half-moon', 'half moon': 'half-moon', half_moon: 'half-moon' };
+/**
+ * The builder's cut for a CAD stone's block name ("Diamond_Oval"), or null. A baguette is tapered
+ * when one end is clearly narrower than the other (`taper`: narrow end ÷ wide end).
+ */
+export const shapeOfName = (name = '', taper = 1) => {
   const s = SHAPE_NAMES.find((k) => name.toLowerCase().includes(k));
+  if (s === 'baguette') return taper < 0.9 ? 'tapered-baguette' : 'baguette';
   return s ? NEAREST[s] ?? s : null;
 };
 
@@ -74,9 +78,20 @@ function stoneFrame(positions) {
   const centre = [...mid];
   centre[d] = gCount ? gSum / gCount : mid[d];
   const up = [0, 0, 0]; up[d] = top >= bottom ? 1 : -1;
-  const long = [0, 0, 0]; long[longAxis] = 1;
+  // Width at each end of the long axis: a tapered stone is wider at one end.
+  const endWidth = (sign) => {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const along = (positions[i * 3 + longAxis] - mid[longAxis]) * sign;
+      if (along > ext[longAxis] * 0.4) { lo = Math.min(lo, positions[i * 3 + shortAxis]); hi = Math.max(hi, positions[i * 3 + shortAxis]); }
+    }
+    return hi - lo;
+  };
+  const [plus, minus] = [endWidth(1), endWidth(-1)];
+  // The long axis points to the wider end (the builder's tapered cuts are wide at +z).
+  const long = [0, 0, 0]; long[longAxis] = minus > plus * 1.05 ? -1 : 1;
   const short = [0, 0, 0]; short[shortAxis] = 1;
-  return { centre, up, long, short, width: ext[shortAxis], length: ext[longAxis] };
+  return { centre, up, long, short, width: ext[shortAxis], length: ext[longAxis], taper: Math.min(plus, minus) / Math.max(plus, minus, 1e-9) };
 }
 
 /** Merges meshes (stage coordinates) into one geometry. */
@@ -145,7 +160,7 @@ export async function buildCadRing(cad, { head = 0, shank = head, shape = null, 
     const x = unit(cross(y, z));
     z = cross(x, y);
     const isCentre = it.role === 'centre';
-    const own = shapeOfName(def?.name) ?? (Math.abs(length / width - 1) < 0.08 ? 'round' : 'oval');
+    const own = shapeOfName(def?.name, f.taper) ?? (Math.abs(length / width - 1) < 0.08 ? 'round' : 'oval');
     let key = isCentre ? shape ?? own : own;
     // Small round stones (pavé, halo) use the accent cut: they are a few pixels across.
     const small = !isCentre && Math.max(width, length) < 2.2;

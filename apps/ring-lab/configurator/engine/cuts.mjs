@@ -129,6 +129,29 @@ const OUTLINES = {
     const edges = cutCorners(0.5, 0.5 * r, corner);
     return outline((t) => octagonAt(edges, t).p, r);
   },
+  // A triangle with gently curved sides and softened points: a flat side towards +z (the
+  // centre stone, in a three-stone ring), a point towards −z. Scaled to width 1.
+  trillion: () => {
+    const edges = [90, 210, 330].map((deg) => ({ n: [Math.cos((deg * Math.PI) / 180), Math.sin((deg * Math.PI) / 180)], D: 0.2887 }));
+    const raw = (t) => {
+      const p = octagonAt(edges, t).p, r = Math.hypot(p[0], p[1]);
+      // Sides bulge out a little; the points are rounded off.
+      const k = Math.min(r + 0.06 * Math.max(0, (0.5774 - r) / 0.2887), 0.52) / r;
+      return [p[0] * k, p[1] * k];
+    };
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let i = 0; i < 2000; i++) {
+      const [x, z] = raw((i / 2000) * 2 * Math.PI);
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+    }
+    const k = 1 / (maxX - minX), mz = (minZ + maxZ) / 2;
+    return outline((t) => { const [x, z] = raw(t); return [x * k, (z - mz) * k]; }, (maxZ - minZ) * k);
+  },
+  // A half moon: a straight edge towards +z (the centre stone), a half circle towards −z.
+  'half-moon': () => outline((t) => {
+    const s = Math.sin(t);
+    return [0.5 * Math.cos(t), (s < 0 ? 0.5 * s : 0) + 0.25];
+  }, 0.5),
   // Pointed at both ends: x = ½(1 − (z/b)²), a lens.
   marquise: (r = 2.0) => outline((t) => [0.5 * Math.sin(t) * Math.abs(Math.sin(t)), 0.5 * r * Math.cos(t)], r),
   // Round at −z, pointed at +z; widest nearer the round end, as a pear is.
@@ -208,7 +231,7 @@ function brilliant(shape, o = {}) {
 /** An emerald (step) cut: an octagon with three rows of steps on the crown and on the pavilion. */
 function stepCut(o = {}) {
   const { ratio = 1.42, corner = 0.13, table = 0.62, girdle = 0.03 } = o;
-  const edges = cutCorners(0.5, 0.5 * ratio, corner);
+  const edges = o.edges ?? cutCorners(0.5, 0.5 * ratio, corner);
   const yG = girdle / 2;
   const planes = [];
   for (const e of edges) planes.push({ n: [e.n[0], 0, e.n[1]], d: e.D, tag: 'girdle' });
@@ -283,6 +306,32 @@ export const SHAPES = {
   asscher: { label: 'Asscher', make: () => stepCut({ ratio: 1, corner: 0.24, table: 0.54 }) },
 };
 
+/** The trapezoid of a tapered baguette: wide end (width 1) at +z, narrow end (width k) at −z. */
+function trapezoid(ratio, k) {
+  const L = ratio / 2;
+  // Each side runs from (±k/2, −L) to (±1/2, +L); its outward normal leans towards −z.
+  const side = (sx) => { const n = [sx * 2 * L, -(0.5 - 0.5 * k)]; const l = Math.hypot(...n); const u = [n[0] / l, n[1] / l]; return { n: u, D: u[0] * sx * 0.5 + u[1] * L }; };
+  return [{ n: [0, 1], D: L }, { n: [0, -1], D: L }, side(1), side(-1)];
+}
+
+/**
+ * Side stones for three-stone rings: the centre shapes plus shapes made for flanking a centre
+ * stone. Lengths run along z; in a ring, +z faces the centre stone (a pear's point, a tapered
+ * baguette's wide end, a half moon's straight edge).
+ */
+export const SIDE_SHAPES = {
+  round: { label: 'Round' },
+  oval: { label: 'Oval' },
+  pear: { label: 'Pear' },
+  princess: { label: 'Princess' },
+  emerald: { label: 'Emerald' },
+  marquise: { label: 'Marquise' },
+  baguette: { label: 'Baguette', make: () => stepCut({ ratio: 2.4, edges: cutCorners(0.5, 1.2, 0.02), table: 0.6 }) },
+  'tapered-baguette': { label: 'Tapered baguette', make: () => stepCut({ ratio: 1.67, edges: trapezoid(1.67, 0.62), table: 0.6 }) },
+  trillion: { label: 'Trillion', make: () => brilliant('trillion', { table: 0.6, crown: 33, pavilion: 41, girdleFacets: 36 }) },
+  'half-moon': { label: 'Half moon', make: () => brilliant('half-moon', { table: 0.6, crown: 33, pavilion: 41, girdleFacets: 36 }) },
+};
+
 /** Cuts for small accent stones: fewer facets (they are a few pixels across), so cheaper to trace. */
 const ACCENTS = {
   'round-accent': () => brilliant('round', { simple: true, girdleFacets: 16, table: 0.54, crown: 34, pavilion: 41 }),
@@ -297,7 +346,7 @@ const cache = new Map();
  */
 export function cut(key) {
   if (cache.has(key)) return cache.get(key);
-  const spec = SHAPES[key]?.make() ?? ACCENTS[key]?.();
+  const spec = SHAPES[key]?.make() ?? ACCENTS[key]?.() ?? SIDE_SHAPES[key]?.make?.();
   if (!spec) throw new Error(`unknown cut ${key}`);
   const solid = solidFromPlanes(spec.planes);
   const mesh = meshOfSolid(solid);

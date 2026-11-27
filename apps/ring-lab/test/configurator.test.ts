@@ -129,6 +129,15 @@ describe('ring builder', () => {
         expect(culet, `${shape}/${head}`).toBeLessThan(R + 1.6);
         const band = r.metal.shank.positions as Float32Array;
         for (let i = 0; i < band.length; i += 3) if (band[i + 1] > 0 && Math.abs(band[i]) < 1) throw new Error(`${shape}: band under the head`);
+        // The band's cut ends shade like the rest of it: every triangle faces the way its normals do.
+        const { normals: N, index: I } = r.metal.shank as Geometry, P = band;
+        for (let k = 0; k < I.length; k += 3) {
+          const [a, b, c] = [I[k] * 3, I[k + 1] * 3, I[k + 2] * 3];
+          const u = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]], v = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]];
+          const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+          const along = n[0] * (N[a] + N[b] + N[c]) + n[1] * (N[a + 1] + N[b + 1] + N[c + 1]) + n[2] * (N[a + 2] + N[b + 2] + N[c + 2]);
+          if (along < -1e-9) throw new Error(`${shape}: band triangle ${k / 3} faces against its normals`);
+        }
       }
     }
   });

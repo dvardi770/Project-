@@ -154,13 +154,17 @@ function openBand(m, { r, segments, profile, arc: [phi0, phi1] }) {
   };
   return solid(m, () => {
     grid(m, rows, n, place, { wrapCols: true, uv: (i, j) => [phiAt(i) / (2 * Math.PI), j / n] });
-    // Flat ends: a fan round each end's middle, wound to face the same way as the sides.
+    // Flat ends: a fan round each end's middle, wound to face the same way as the sides. Their
+    // normal follows the winding, so it stays right if solid() turns the piece inside out.
     for (const [i, sign] of [[0, -1], [rows - 1, 1]]) {
-      const phi = phiAt(i), T = [Math.cos(phi) * sign, -Math.sin(phi) * sign, 0];
+      const phi = phiAt(i);
       const pts = Array.from({ length: n }, (_, j) => place(i, j));
       const c = pts.reduce((a, q) => add(a, q), [0, 0, 0]).map((x) => x / n);
-      const ci = m.vertex(c, T, [phi / (2 * Math.PI), 0.5]);
-      const ids = pts.map((q, j) => m.vertex(q, T, [phi / (2 * Math.PI), j / n]));
+      let N = [0, 0, 0];
+      for (let j = 0; j < n; j++) N = add(N, cross(sub(pts[j], c), sub(pts[(j + 1) % n], c)));
+      N = unit(scale(N, sign < 0 ? 1 : -1));
+      const ci = m.vertex(c, N, [phi / (2 * Math.PI), 0.5]);
+      const ids = pts.map((q, j) => m.vertex(q, N, [phi / (2 * Math.PI), j / n]));
       for (let j = 0; j < n; j++) {
         if (sign < 0) m.tri(ci, ids[j], ids[(j + 1) % n]);
         else m.tri(ci, ids[(j + 1) % n], ids[j]);

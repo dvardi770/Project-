@@ -19,14 +19,17 @@ for a pair of rings.
   round the stone's outline, with basket rails; halos of small stones set tight round the centre
   stone, with the centre's prongs rising through gaps between them; hidden and secret halos under
   the girdle; bezels and tulip petals. Three-stone heads are made as in a jeweller's CAD (a 10.3 mm
-  round with tapered baguettes): one setting, not three baskets. The centre's lower ring lies on
-  the finger where the band would be, so the centre stone sits low; straight prongs rise from it
-  with a flat collar halfway up. Each side stone (any of ten shapes, a chosen size and lean, 0–60°)
-  has its wide end tucked under the centre's girdle, a frame under its girdle meeting the collar,
-  and inner prongs rising from the same lower ring. Baguettes slope steeply down the shoulder to a
-  plate on the band with a bar over their end; other shapes have outer prongs standing on the band.
-  The band stops at the plates; under the head, two thin rails per side run on the finger's curve
-  with a slit between them (the airline), and the gallery under each side stone is open.
+  round with tapered baguettes): one setting, not three baskets. The centre's flat lower ring lies
+  on the finger where the band would be, so the centre stone sits low; straight prongs rise from
+  it, with a flat collar from a third to two thirds of the way down the pavilion. Each side stone
+  (any of ten shapes, a chosen size and lean, 0–60°) has a frame under its girdle whose inner end
+  sits on the collar, level with it, so the baskets' lines run into each other; its inner prongs
+  rise from the same lower ring. Baguettes slope down the shoulder to a plate on the band with a
+  bar over their end; other shapes have outer prongs standing on the band. Under the head the band
+  runs on into the lower ring as a bridge of its own cross-section, split by a slit (the airline)
+  and thinning smoothly, with no step; the gallery under each side stone is open. Side stones
+  default to the CAD's proportions and are never wider than three quarters of the centre stone
+  or longer than nine tenths of it.
   Shanks are cross-sections swept round the finger (tapering,
   comfort fit, flutes, French and U-pavé scallops), twisted or braided wires, and rows of pavé
   (beads over the stones' edges, shared between rows) or eight-stone settings. Cathedral shoulders
@@ -56,10 +59,11 @@ for a pair of rings.
     trace instead of three); when it stops, the picture is refined over 14 steps, each tracing red,
     green and blue separately at slightly varied refractive indices, with sub-pixel offsets.
   - Metal: physically based, in a studio of softboxes rendered once into an environment map;
-    finishes as normal maps at real scale (brushed ones anisotropic); a deep, warm yellow gold.
-    The band builder uses a soft studio (round lights whose edges blend into the room) so wide
-    polished surfaces, inside and out, show flowing gradients instead of the shapes of the lights;
-    `metalTones` can still override a metal's colour.
+    finishes as normal maps at real scale (brushed ones anisotropic); a deep, warm yellow gold, a
+    rich rose and a crisp, slightly cool white. Both builders and the shop's photos, 360° videos
+    and live 3D use a soft studio (round lights whose edges blend into the room): polished
+    surfaces show flowing gradients instead of the shapes of the lights, and the metals keep their
+    depth of colour; `metalTones` can still override a metal's colour.
   - Ambient occlusion baked per vertex on the GPU each time the design changes: the design is
     seen from 64 directions and each metal vertex counts how much of the studio it can see, so
     crevices under the basket, between prongs and halo stones and inside the band are shaded as in

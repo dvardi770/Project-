@@ -198,7 +198,8 @@ const sections = [
   { key: 'head', title: 'Head', view: 'head', options: () => Object.entries(HEADS).map(([value, h]) => ({ value, label: h.label, icon: HEAD_ICONS[value] })) },
   // Three stone: the side stones' shape, size and lean.
   { key: 'sideShape', title: 'Side stones', view: 'head', options: () => Object.entries(SIDE_SHAPES).map(([value, s]) => ({ value, label: s.label, icon: shapeIcon(value) })), hidden: () => state.head !== 'three-stone' },
-  { key: 'sideSize', title: 'Side stone size', kind: 'range', min: 1.5, max: 8, step: 0.1, value: () => design?.specs.sides?.width ?? 3,
+  // Up to the largest that keeps the centre stone the star (it follows the centre's size and the side shape).
+  { key: 'sideSize', title: 'Side stone size', kind: 'range', min: 1.5, max: () => design?.specs.sides?.maxWidth ?? 5, step: 0.1, value: () => design?.specs.sides?.width ?? 3,
     shown: () => { const d = design?.specs.sides; return d ? `${d.length.toFixed(1)} × ${d.width.toFixed(1)} mm · ${d.carats.toFixed(2)} ct each` : ''; },
     ends: ['Smaller', 'Larger'], hidden: () => state.head !== 'three-stone' },
   { key: 'sideAngle', title: 'Side stone angle', kind: 'range', min: 0, max: 60, step: 1, value: () => design?.specs.sides?.angle ?? 15,
@@ -229,7 +230,8 @@ function renderOptions() {
       // A slider: the ring follows while it is dragged; the menu is redrawn when it is let go.
       h.querySelector('b').textContent = sec.shown();
       const input = document.createElement('input');
-      Object.assign(input, { type: 'range', min: sec.min, max: sec.max, step: sec.step, value: sec.value() });
+      const bound = (b) => (typeof b === 'function' ? b() : b);
+      Object.assign(input, { type: 'range', min: bound(sec.min), max: bound(sec.max), step: sec.step, value: sec.value() });
       input.setAttribute('aria-labelledby', h.id);
       let queued = false;
       input.addEventListener('input', () => {
@@ -434,7 +436,7 @@ async function makeThumbs() {
 let stage;
 try {
   // The page itself does not scroll (only the menu does), so a drag on the 3D only turns the ring.
-  stage = new Stage(document.getElementById('stage'), { background: getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#ffffff', touchScroll: false });
+  stage = new Stage(document.getElementById('stage'), { background: getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#ffffff', touchScroll: false, studio: 'soft' });
 } catch (e) {
   document.getElementById('loading').textContent = 'This browser cannot show 3D. Try a recent Chrome, Safari or Firefox.';
   throw e;

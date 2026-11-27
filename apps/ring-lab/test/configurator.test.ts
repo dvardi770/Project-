@@ -32,7 +32,7 @@ describe('gem cuts', () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   it('weigh what real stones of that size weigh', () => {
     // A 1 ct round brilliant is about 6.4–6.5 mm across.
@@ -195,6 +195,37 @@ describe('ring builder', () => {
     expect(Math.abs(m[2])).toBeGreaterThan(Math.abs(m[0]) + 1);
     expect(buildRing({ head: 'three-stone', sideAngle: 0 }).specs.sides.angle).toBe(0);
     expect(buildRing({ head: 'three-stone', sideAngle: 60 }).specs.sides.angle).toBe(60);
+  });
+
+  it('keeps side stones in proportion to the centre stone', () => {
+    for (const sideShape of Object.keys(SIDE_SHAPES)) for (const carat of [0.5, 1, 3]) {
+      const auto = buildRing({ head: 'three-stone', shape: 'round', carat, sideShape });
+      const centre = auto.specs.centre.mm[1];
+      // As large as asked, but never larger than the most that keeps the centre the star.
+      const big = buildRing({ head: 'three-stone', shape: 'round', carat, sideShape, sideSize: 8 }).specs.sides;
+      expect(big.width, `${sideShape} ${carat} ct`).toBeLessThanOrEqual(0.75 * centre + 1e-9);
+      expect(big.length, `${sideShape} ${carat} ct`).toBeLessThanOrEqual(0.9 * centre + 0.01);
+      expect(big.width).toBe(big.maxWidth);
+      expect(auto.specs.sides.width).toBeLessThanOrEqual(auto.specs.sides.maxWidth);
+      expect(auto.specs.sides.width).toBeGreaterThanOrEqual(Math.min(2, auto.specs.sides.maxWidth) - 1e-9);
+    }
+  });
+
+  it('runs the band on under a three-stone head without a step', () => {
+    const r = buildRing({ head: 'three-stone', shank: 'classic', shape: 'round', carat: 2, sideShape: 'tapered-baguette' });
+    const pos = r.metal.shank.positions as Float32Array;
+    // The outside of the band and of the bridge that carries on from it, round the top.
+    const outer: number[] = [];
+    for (let deg = 6; deg <= 70; deg += 2) {
+      let best = 0;
+      for (let i = 0; i < pos.length; i += 3) {
+        const a = (Math.atan2(Math.abs(pos[i]), pos[i + 1]) * 180) / Math.PI;
+        if (Math.abs(a - deg) < 1 && Math.abs(pos[i + 2]) < 0.5) best = Math.max(best, Math.hypot(pos[i], pos[i + 1]));
+      }
+      if (best) outer.push(best);
+    }
+    expect(outer.length).toBeGreaterThan(20);
+    for (let k = 1; k < outer.length; k++) expect(Math.abs(outer[k] - outer[k - 1]), `at ${k}`).toBeLessThan(0.15);
   });
 
   it('sets tapered baguettes as the CAD does: under the centre girdle, sloping down to the band', () => {

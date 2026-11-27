@@ -26,13 +26,15 @@ export const GEMS = {
 
 /** f0: the alloy's reflectance (linear RGB). density in g/cm³ by fineness. */
 export const METALS = {
-  white:    { label: 'White gold', f0: [0.86, 0.85, 0.83], swatch: '#e4e4e2', density: { '14k': 12.6, '18k': 14.7 } },
+  // Rhodium-plated: a crisp, slightly cool white.
+  white:    { label: 'White gold', f0: [0.9, 0.9, 0.91], swatch: '#e9eaec', density: { '14k': 12.6, '18k': 14.7 } },
   // A deep, warm yellow: richer than the pale yellow of pure reflectance tables, as gold looks in a photo.
   yellow:   { label: 'Yellow gold', f0: [0.93, 0.62, 0.26], swatch: '#d9a94a', density: { '14k': 13.1, '18k': 15.6 } },
-  rose:     { label: 'Rose gold', f0: [0.97, 0.63, 0.5], swatch: '#e7ab93', density: { '14k': 13.0, '18k': 15.1 } },
+  // A rich rose: pinker and deeper than a pale peach.
+  rose:     { label: 'Rose gold', f0: [0.91, 0.52, 0.42], swatch: '#dc9783', density: { '14k': 13.0, '18k': 15.1 } },
   platinum: { label: 'Platinum', f0: [0.74, 0.72, 0.69], swatch: '#cfd0d1', density: { '14k': 20.7, '18k': 20.7, pt: 20.7 } },
   // Offered for wedding bands: a deeper red gold, and white gold under black rhodium.
-  red:      { label: 'Red gold', f0: [0.95, 0.52, 0.38], swatch: '#d4876f', density: { '14k': 13.2, '18k': 15.2 } },
+  red:      { label: 'Red gold', f0: [0.86, 0.4, 0.28], swatch: '#c0715a', density: { '14k': 13.2, '18k': 15.2 } },
   black:    { label: 'Black gold', f0: [0.12, 0.12, 0.125], swatch: '#2b2b2d', density: { '14k': 12.6, '18k': 14.7 } },
 };
 

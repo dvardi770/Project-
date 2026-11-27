@@ -14,7 +14,7 @@ import { z } from 'zod';
 import type { RenderSet } from '@jewelry/shared/storefront';
 import type { AppDeps } from '../common/context';
 import { csvEnum, pagination, type Money } from '../common/query';
-import { loadManifest, renderSet, variantMedia } from '../services/renders';
+import { findManifest, renderSet, variantMedia } from '../services/renders';
 import { RENDERS_PATH } from './renders';
 
 /** Catalogues are small; pricing and paging happen in memory over at most this many. */
@@ -109,7 +109,7 @@ async function listSettings(
   for (const s of settings) {
     const renders = s.renderKey && rendersBase ? renderSet(rendersBase, s.renderKey) : null;
     // Variants without photos of their own show the rendered ones.
-    const manifest = renders && deps.config.rendersDir ? await loadManifest(deps.config.rendersDir, s.renderKey!.split('/')[0]!) : null;
+    const manifest = renders ? await findManifest(deps.config, s.renderKey!.split('/')[0]!) : null;
     const variants: SettingVariantDto[] = [];
     for (const v of s.variants) {
       const priced = calculateRetailPrice(

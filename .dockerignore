@@ -1,0 +1,10 @@
+**/node_modules
+**/.next
+**/dist
+.git
+apps/ring-lab
+**/*.3dm
+**/media
+**/.env
+**/.env.*
+!**/.env.example

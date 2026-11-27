@@ -115,6 +115,14 @@ DATABASE_URL=$TEST_DATABASE_URL pnpm --filter @jewelry/db migrate:deploy
 TEST_DATABASE_URL=postgresql://... TEST_REDIS_URL=redis://... pnpm test
 ```
 
+## Practice mode
+
+To try everything on your own site before offering it: `pnpm --filter @jewelry/api practice <your site>`
+on a database of its own adds a practice store with the 8 demo ring designs (rendered photos, 360° and
+3D through `RENDERS_PUBLIC_URL`), 48 sample diamonds, a starting markup and keys. The Docker image
+(`infra/docker/Dockerfile`) and `render.yaml` start a practice server with `PRACTICE_SITE` set. Step by
+step for WordPress: [docs/practice-wordpress.md](docs/practice-wordpress.md).
+
 ## Connecting a store
 
 Checkout and order webhooks need the store's credentials, stored encrypted with
@@ -285,7 +293,8 @@ from a design made from measurements: photos from four angles (angled, front, si
 360° turntable video on white, for every metal, centre-stone shape and diamond colour, plus a live
 3D viewer. Photos, video and 3D all come from the ring builder's engine, so they match the 3D
 builders. The API serves a folder of
-render collections (`RENDERS_DIR`, at `/renders/`, or from a CDN with `RENDERS_PUBLIC_URL`), and a
+render collections (`RENDERS_DIR`, at `/renders/`, or from a CDN with `RENDERS_PUBLIC_URL`; with only the
+URL set, it reads the manifests from there, kept for five minutes), and a
 setting points at its renders with `renderKey` (`"<collection>/<combo>"`).
 
 - A collection holds `media/` (manifest, photos, videos), `viewer.html` with its engine (`engine/*.mjs`)

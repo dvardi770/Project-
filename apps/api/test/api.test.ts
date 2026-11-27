@@ -690,6 +690,19 @@ describe.skipIf(!url)('storefront API', () => {
       expect(unrelated.json()).toMatchObject({ handled: true, castingOrders: [] });
       expect(await db.castingOrder.count()).toBe(3);
     });
+
+    it("answers WooCommerce's unsigned ping for a new webhook, and nothing else unsigned", async () => {
+      const woo = await db.tenant.create({ data: { name: 'Woo Jewelers', slug: 'woo-ping', platformType: 'WOOCOMMERCE' } });
+      const ping = (id: string, payload: string) =>
+        app.inject({ method: 'POST', url: `/webhooks/woocommerce/${id}`, headers: { 'content-type': 'application/x-www-form-urlencoded' }, payload });
+      const ok = await ping(woo.id, 'webhook_id=42');
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json()).toEqual({ received: true, handled: false });
+      expect((await ping(woo.id, '{"id":1,"status":"processing"}')).statusCode).toBe(401); // an order must be signed
+      expect((await ping(randomUUID(), 'webhook_id=42')).statusCode).toBe(401); // no such store
+      expect((await ping(tenantId, 'webhook_id=42')).statusCode).toBe(401); // a Shopify store
+      await db.tenant.delete({ where: { id: woo.id } });
+    });
   });
 
   describe('Shopify App Proxy', () => {

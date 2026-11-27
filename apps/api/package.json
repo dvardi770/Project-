@@ -8,7 +8,8 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json",
     "set-credentials": "tsx scripts/set-platform-credentials.ts",
-    "issue-key": "tsx scripts/issue-api-key.ts"
+    "issue-key": "tsx scripts/issue-api-key.ts",
+    "practice": "tsx scripts/practice-store.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",

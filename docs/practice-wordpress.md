@@ -69,6 +69,18 @@ The zip carries a `_headers` file that lets your WordPress site read the photo l
 5. Open the page. You should see the eight rings with photos, then the diamonds, then the review
    with the 3D ring and the price.
 
+### The 3D ring builder and wedding band builder
+
+Make two more pages the same way, one with each shortcode:
+
+- `[jewelry_ring_builder]`: design an engagement ring in 3D (shape, carat, head, side stones, band, metals).
+- `[jewelry_band_builder]`: design wedding bands, one or a pair, with stones and engraving.
+
+They come from your server, so nothing is hosted on Netlify. Their prices come from the builders'
+price list (metal per gram, stones per carat, making and setting). Your server works each price out
+again before anything goes into the cart, so a shopper can't change it. Optional: `height="760px"`
+sets the builder's height on the page; the default is most of the screen.
+
 ## 4. Turn on "Add to cart" and orders
 
 1. **A hidden product for custom rings.** In WordPress go to **Products → Add New**. Name it "Custom Ring",
@@ -96,6 +108,7 @@ The zip carries a `_headers` file that lets your WordPress site read the photo l
 ## 5. Practise
 
 - **As a customer.** Design a ring on your page, "Add to cart", and check out with Cash on delivery.
+  Rings and bands made in the 3D builders go in the cart the same way, one line per ring.
   WooCommerce marks the order "Processing". That counts as paid, and the order appears in the dashboard.
 - **As the jeweller.** Open the dashboard address and sign in with the `sk_live_…` key:
   - **Markup** changes your prices. The site shows them within a minute.

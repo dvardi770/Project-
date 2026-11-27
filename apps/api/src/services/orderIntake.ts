@@ -7,7 +7,7 @@
  * session can only ever produce one casting order.
  */
 import { randomBytes } from 'node:crypto';
-import { Prisma, type CastingStage, type CheckoutSession, type PrismaClient } from '@jewelry/db';
+import { Prisma, type CastingStage, type CheckoutSession, type MetalType, type PrismaClient } from '@jewelry/db';
 import type { NormalizedOrder, NormalizedOrderLine } from '@jewelry/platforms';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,7 +28,32 @@ function newJobBagNumber(now = new Date()): string {
   return `JB-${ymd}-${suffix}`;
 }
 
+/** What a custom design (from the 3D builders) records about itself; see routes/custom.ts. */
+interface CustomDesignRecord {
+  kind: 'ring' | 'band';
+  title: string;
+  metal: MetalType | null;
+  hasStones: boolean;
+  hasCentre: boolean;
+  specs: Record<string, unknown>;
+}
+
 function routeFor(session: CheckoutSession): CastingStage[] {
+  const custom = session.customDesign as unknown as CustomDesignRecord | null;
+  if (custom) {
+    return [
+      'CAD_PREP',
+      'WAX_PRINT',
+      'CASTING',
+      'CLEANUP',
+      ...(custom.hasCentre ? (['STONE_PROCUREMENT'] as const) : []),
+      ...(custom.hasStones ? (['STONE_SETTING'] as const) : []),
+      'POLISHING',
+      ...(session.engraving ? (['ENGRAVING'] as const) : []),
+      'QUALITY_CONTROL',
+      'PACKAGING',
+    ];
+  }
   return [
     'CAD_PREP',
     'WAX_PRINT',
@@ -94,11 +119,6 @@ export async function ingestPaidOrder(
         const already = await tx.castingOrder.findUnique({ where: { checkoutSessionId: session.id } });
         if (already) return null;
 
-        const variant = await tx.virtualSettingVariant.findUniqueOrThrow({
-          where: { id: session.settingVariantId },
-          include: { setting: true },
-        });
-
         // Anything that needs a person to look before production starts.
         const issues: string[] = [];
         const paid = new Prisma.Decimal(line.unitPrice || 0);
@@ -109,6 +129,48 @@ export async function ingestPaidOrder(
           issues.push(`Paid in ${order.currency}; quoted in ${session.currency}.`);
         }
         if (line.quantity !== 1) issues.push(`Ordered quantity ${line.quantity}; a bundle is a single ring.`);
+
+        const stages = routeFor(session);
+        const common = {
+          tenantId,
+          jobBagNumber: newJobBagNumber(),
+          status: issues.length ? ('ON_HOLD' as const) : ('CONFIRMED' as const),
+          currentStage: stages[0],
+          externalOrderId: order.externalOrderId,
+          externalLineItemId: line.externalLineItemId || session.id,
+          customerReference: order.customerReference,
+          ringSize: session.ringSize ?? 0,
+          engraving: session.engraving,
+          notes: issues.length ? issues.join(' ') : null,
+          retailTotal: session.total,
+          currency: session.currency,
+          checkoutSessionId: session.id,
+          routeSteps: { create: stages.map((stage, i) => ({ sequence: i + 1, stage })) },
+        };
+
+        // A ring or band designed in the 3D builders: made from its design. Its price came from
+        // the builders' price list, so costs are worked out by the workshop.
+        const custom = session.customDesign as unknown as CustomDesignRecord | null;
+        if (custom) {
+          const castingOrder = await tx.castingOrder.create({
+            data: {
+              ...common,
+              metal: custom.metal,
+              customDesign: session.customDesign as Prisma.InputJsonValue,
+              centerStoneSnapshot: { inventory: 'DESIGN', ...(custom.kind === 'ring' ? { centre: custom.specs.centre ?? null } : {}) } as Prisma.InputJsonValue,
+              castingCost: 0,
+              stoneCost: 0,
+            },
+          });
+          await tx.checkoutSession.update({ where: { id: session.id }, data: { status: 'ORDERED' } });
+          return castingOrder;
+        }
+
+        if (!session.settingVariantId || !session.stoneId || !session.stoneSource) throw new Error(`checkout session ${session.id} has no setting or stone`);
+        const variant = await tx.virtualSettingVariant.findUniqueOrThrow({
+          where: { id: session.settingVariantId },
+          include: { setting: true },
+        });
 
         let stoneCost = new Prisma.Decimal(0);
         let snapshot: Prisma.InputJsonValue;
@@ -144,32 +206,18 @@ export async function ingestPaidOrder(
           snapshot = JSON.parse(JSON.stringify({ inventory: 'MERCHANT', ...m })) as Prisma.InputJsonValue;
         }
 
-        const stages = routeFor(session);
         const castingOrder = await tx.castingOrder.create({
           data: {
-            tenantId,
-            jobBagNumber: newJobBagNumber(),
-            status: issues.length ? 'ON_HOLD' : 'CONFIRMED',
-            currentStage: stages[0],
-            externalOrderId: order.externalOrderId,
-            externalLineItemId: line.externalLineItemId || session.id,
-            customerReference: order.customerReference,
+            ...common,
             settingVariantId: variant.id,
             metal: variant.metal,
             cadId: variant.setting.cadId,
-            ringSize: session.ringSize,
-            engraving: session.engraving,
-            notes: issues.length ? issues.join(' ') : null,
             centerDiamondId,
             centerMerchantStockId,
             centerStoneSnapshot: snapshot,
             castingCost: variant.castingCost,
             stoneCost,
-            retailTotal: session.total,
-            currency: session.currency,
             markupRuleId: session.stoneMarkupRuleId,
-            checkoutSessionId: session.id,
-            routeSteps: { create: stages.map((stage, i) => ({ sequence: i + 1, stage })) },
           },
         });
         await tx.checkoutSession.update({ where: { id: session.id }, data: { status: 'ORDERED' } });

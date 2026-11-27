@@ -680,6 +680,66 @@ describe.skipIf(!url)('storefront API', () => {
       expect(job).toMatchObject({ status: 'CONFIRMED', centerDiamondId: stone.big });
     });
 
+    it('prices a ring or band designed in the 3D builders on the server and makes it a job bag when paid', async () => {
+      // @ts-expect-error plain JavaScript module without type declarations
+      const ringEngine = await import('../../ring-lab/configurator/engine/ring.mjs');
+      // @ts-expect-error plain JavaScript module without type declarations
+      const pricing = await import('../../ring-lab/configurator/engine/pricing.mjs');
+      const custom = (payload: object) =>
+        app.inject({ method: 'POST', url: '/api/v1/custom/cart-item', headers: { 'x-api-key': PK, origin: ORIGIN }, payload });
+      const design = { shape: 'oval', carat: 1.5, head: 'halo', shank: 'pave', headMetal: 'yellow', shankMetal: 'yellow', size: 6.5, price: 1, total: 1 };
+      const expected = pricing.priceRing(ringEngine.buildRing(design).specs).total;
+
+      const res = await custom({ kind: 'ring', design });
+      expect(res.statusCode).toBe(200);
+      const item = res.json();
+      // The server's price from the builders' own price list; the browser's "price" is ignored.
+      expect(item.price).toEqual({ amount: expected.toFixed(2), currency: 'USD' });
+      expect(item.title).toMatch(/^Custom ring: 1\.50 ct Oval Halo in 14k Yellow gold/);
+      expect(item.properties).toMatchObject({ Head: 'Halo', 'Ring size': 'US 6.5', _bundle_id: item.bundleId });
+      expect(item.purchasableId).toMatch(/^9\d{3}$/);
+      const session = await db.checkoutSession.findUniqueOrThrow({ where: { id: item.bundleId } });
+      expect(session).toMatchObject({ settingVariantId: null, stoneId: null, status: 'OPEN' });
+      expect((session.customDesign as { design: Record<string, unknown> }).design).not.toHaveProperty('price');
+
+      // Something the builder would not make is refused, and nothing is created.
+      const before = await db.checkoutSession.count();
+      expect((await custom({ kind: 'ring', design: { shape: 'triangle' } })).statusCode).toBe(422);
+      expect((await custom({ kind: 'band', design: { engraving: '<script>' } })).statusCode).toBe(422);
+      expect(await db.checkoutSession.count()).toBe(before);
+
+      const band = (await custom({ kind: 'band', design: { width: 4, metal: 'rose', engraving: 'Always' } })).json();
+      expect(band.title).toMatch(/^Wedding band: 4\.0 mm .* in 14k Rose gold/);
+      expect(band.properties).toMatchObject({ Engraving: 'Always', 'Ring size': 'EU 52' });
+
+      const paid = await webhook({
+        id: 7001, name: '#7001', currency: 'USD', customer: { id: 9 },
+        line_items: [
+          { id: 70010, variant_id: Number(item.purchasableId), price: item.price.amount, quantity: 1, properties: [] },
+          { id: 70011, variant_id: Number(band.purchasableId), price: band.price.amount, quantity: 1, properties: [] },
+        ],
+      });
+      expect(paid.json().castingOrders).toHaveLength(2);
+      const ringJob = await db.castingOrder.findUniqueOrThrow({ where: { checkoutSessionId: item.bundleId }, include: { routeSteps: true } });
+      expect(ringJob).toMatchObject({ status: 'CONFIRMED', settingVariantId: null, metal: 'YELLOW_GOLD_14K', cadId: null });
+      expect(ringJob.retailTotal.toFixed(2)).toBe(expected.toFixed(2));
+      expect(ringJob.routeSteps.map((s) => s.stage)).toContain('STONE_SETTING');
+      const bandJob = await db.castingOrder.findUniqueOrThrow({ where: { checkoutSessionId: band.bundleId }, include: { routeSteps: true } });
+      expect(bandJob).toMatchObject({ metal: 'ROSE_GOLD_14K', engraving: 'Always' });
+      expect(bandJob.routeSteps.map((s) => s.stage)).toEqual(expect.arrayContaining(['ENGRAVING']));
+      expect(bandJob.routeSteps.map((s) => s.stage)).not.toContain('STONE_PROCUREMENT');
+      await db.castingOrder.deleteMany({ where: { checkoutSessionId: { in: [item.bundleId, band.bundleId] } } });
+    });
+
+    it('serves the 3D builders, and only them', async () => {
+      const page = await app.inject({ method: 'GET', url: '/builder/ring-builder.html' });
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toMatch(/^<!doctype html>/);
+      expect((await app.inject({ method: 'GET', url: '/builder/engine/ring.mjs' })).headers['content-type']).toMatch(/javascript/);
+      expect((await app.inject({ method: 'GET', url: '/builder/viewer.html' })).statusCode).toBe(404);
+      expect((await app.inject({ method: 'GET', url: '/builder/engine/..%2Fring-builder.html' })).statusCode).toBe(404);
+    });
+
     it('rejects bad signatures and ignores unpaid or unrelated orders', async () => {
       expect((await webhook(order(6001, randomUUID(), '1.00'), { secret: 'wrong' })).statusCode).toBe(401);
       expect((await app.inject({ method: 'POST', url: `/webhooks/shopify/${randomUUID()}`, payload: '{}' })).statusCode).toBe(401);

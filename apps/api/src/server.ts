@@ -11,6 +11,8 @@ import { createMarkupMatrixLoader } from './common/markupMatrix';
 import { hashApiKey, hostnameOf, registerTenantAuth } from './common/tenantAuth';
 import { loadConfig, type AppConfig } from './config/env';
 import { cartRoutes } from './routes/cart';
+import { customRoutes } from './routes/custom';
+import { builderRoutes } from './routes/builder';
 import { diamondRoutes } from './routes/diamonds';
 import { settingRoutes } from './routes/settings';
 import { shopifyProxyRoutes } from './routes/shopifyProxy';
@@ -92,11 +94,13 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       await api.register(diamondRoutes, deps);
       await api.register(settingRoutes, deps);
       await api.register(cartRoutes, deps);
+      await api.register(customRoutes, deps);
     },
     { prefix: '/api/v1' },
   );
 
   await app.register(widgetAssetRoutes, deps);
+  await app.register(builderRoutes, deps);
   await app.register(renderRoutes, deps);
   await app.register(shopifyProxyRoutes, deps);
   await app.register(webhookRoutes, deps);

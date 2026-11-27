@@ -18,9 +18,16 @@ for a pair of rings.
 - **Ring parts** (`engine/ring.mjs`, `engine/geometry.mjs`): heads are prongs swept along curves
   round the stone's outline, with basket rails; halos of small stones set tight round the centre
   stone, with the centre's prongs rising through gaps between them; hidden and secret halos under
-  the girdle; bezels and tulip petals; three-stone heads whose side stones (any of ten shapes, a
-  chosen size and lean) sit in their own baskets with prongs at their corners, tucked in beside the
-  centre stone, the baskets joined low down. Shanks are cross-sections swept round the finger (tapering,
+  the girdle; bezels and tulip petals. Three-stone heads are made as in a jeweller's CAD (a 10.3 mm
+  round with tapered baguettes): one setting, not three baskets. The centre's lower ring lies on
+  the finger where the band would be, so the centre stone sits low; straight prongs rise from it
+  with a flat collar halfway up. Each side stone (any of ten shapes, a chosen size and lean, 0–60°)
+  has its wide end tucked under the centre's girdle, a frame under its girdle meeting the collar,
+  and inner prongs rising from the same lower ring. Baguettes slope steeply down the shoulder to a
+  plate on the band with a bar over their end; other shapes have outer prongs standing on the band.
+  The band stops at the plates; under the head, two thin rails per side run on the finger's curve
+  with a slit between them (the airline), and the gallery under each side stone is open.
+  Shanks are cross-sections swept round the finger (tapering,
   comfort fit, flutes, French and U-pavé scallops), twisted or braided wires, and rows of pavé
   (beads over the stones' edges, shared between rows) or eight-stone settings. Cathedral shoulders
   are arches that leave the band and rise to the basket, open underneath. Channel stones sit in a
@@ -149,7 +156,8 @@ in the main README).
   the builders. It renders the CAD rings in the folder (`rings.json`: each ring's own head and
   shank) and designs made from measurements (`designs.json`: the ring builder's options). A CAD
   ring keeps its metal exactly as designed; each of its stones is replaced by the builder's cut
-  of the same shape in the same seat (`configurator/engine/cad.mjs`), so stones sparkle as in
+  of the same shape in the same seat (`configurator/engine/cad.mjs`; baguettes, tapered baguettes,
+  turned wide end first, trillions and half moons are known from MatrixGold's block names), so stones sparkle as in
   the builder and a centre stone of another shape can sit in the same seat. For each metal,
   shape and colour: four photos of the ring standing (WebP, 1200 px and half size) and a 360°
   turntable of it lying on its side, resting on band and head (720 px, 150 frames at 30 fps,

@@ -147,6 +147,9 @@ console.log('ring builder');
     await p.getByRole('radio', { name: 'Tapered baguette' }).click();
     assert.equal(await p.evaluate(() => window.ringBuilder.design.specs.sides.shape), 'tapered-baguette');
     const slider = p.getByRole('slider', { name: /Side stone angle/ });
+    // Left to itself a baguette slopes steeply down the shoulder, as in the jeweller's CAD.
+    assert.ok(await p.evaluate(() => window.ringBuilder.design.specs.sides.angle) > 30);
+    await p.getByText(/down the shoulder/).first().waitFor();
     await slider.fill('30');
     await slider.dispatchEvent('change');
     assert.equal(await p.evaluate(() => window.ringBuilder.design.specs.sides.angle), 30);
